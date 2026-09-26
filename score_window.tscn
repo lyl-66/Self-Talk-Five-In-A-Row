@@ -1,0 +1,94 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://score_window.gd" id="1_score"]
+
+[node name="ScoreWindow" type="Window"]
+title = "比分"
+initial_position = 0
+size = Vector2i(320, 212)
+min_size = Vector2i(300, 190)
+visible = false
+script = ExtResource("1_score")
+
+[node name="Column" type="VBoxContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = 18.0
+offset_right = -24.0
+offset_bottom = -18.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 12
+
+[node name="Rows" type="GridContainer" parent="Column"]
+layout_mode = 2
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 10
+columns = 2
+
+[node name="PlayerName" type="Label" parent="Column/Rows"]
+layout_mode = 2
+vertical_alignment = 1
+text = "我（黑棋）"
+
+[node name="PlayerWins" type="Label" parent="Column/Rows"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 30
+text = "0"
+horizontal_alignment = 2
+
+[node name="AiName" type="Label" parent="Column/Rows"]
+layout_mode = 2
+vertical_alignment = 1
+text = "电脑（白棋）"
+
+[node name="AiWins" type="Label" parent="Column/Rows"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 30
+text = "0"
+horizontal_alignment = 2
+
+[node name="DrawName" type="Label" parent="Column/Rows"]
+layout_mode = 2
+vertical_alignment = 1
+text = "和棋"
+
+[node name="Draws" type="Label" parent="Column/Rows"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = "0"
+horizontal_alignment = 2
+
+[node name="Spacer" type="Control" parent="Column"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Tail" type="HBoxContainer" parent="Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Recent" type="Label" parent="Column/Tail"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 15
+text = "还没有对局记录"
+
+[node name="ClearButton" type="Button" parent="Column/Tail"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "清空"
+
+[node name="Confirm" type="ConfirmationDialog" parent="."]
+title = "清空比分"
+initial_position = 2
+size = Vector2i(300, 148)
+theme_override_font_sizes/font_size = 16
+ok_button_text = "清空"
+dialog_text = "确定把总比分清零吗？
+旧明细会改名留档，不会删除。"
+cancel_button_text = "取消"
