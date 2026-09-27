@@ -5,7 +5,7 @@ extends Window
 ## 每局开一个新话题（main.gd 通过 start_topic 传进来）：
 ##   - 正文按顺序一句一句说，对手每落一子取一行；
 ##   - 正文说完了就从「垫场句池」里随机取，不会突然安静；
-##   - 一局结束时清掉没说完的正文，再按本局的棋子数从对应档位随机说一句告别语。
+##   - 一局结束时清掉没说完的正文，再按本局的棋子数和胜负从对应档位随机说一句告别语。
 ## 日志每局清空，窗口底部显示当前话题。
 
 ## 被单独关掉时发出；主窗口据此把「对话窗口」按钮恢复成可点。
@@ -75,14 +75,15 @@ func speak_move(move_number: int, cell: Vector2i, context: Dictionary = {}) -> v
 	_append(_fill_vars(line, context))
 
 
-## 一局结束：丢掉没说完的正文，按本局棋子数挑一档告别语，随机说一句。
+## 一局结束：丢掉没说完的正文，按本局棋子数和胜负挑一档告别语，随机说一句。
+## result 就是记分用的那个结果（"player" / "ai" / "draw"）。
 ## 这一档没写就往更大的档找；一档都没写就不说了（主窗口已经会显示胜负）。
-func end_topic(final_stones: int, context: Dictionary = {}) -> void:
+func end_topic(final_stones: int, result: String, context: Dictionary = {}) -> void:
 	_body.clear()
 	if _ended:
 		return
 	_ended = true
-	var candidates: Array = book.ending_lines(_topic, final_stones) if book != null else []
+	var candidates: Array = book.ending_lines(_topic, final_stones, result) if book != null else []
 	if candidates.is_empty():
 		_refresh_footer()
 		return
@@ -132,10 +133,7 @@ func _append(line: String) -> void:
 
 ## 把当前台词整块写进日志，并刷新底部状态。
 func _render() -> void:
-	var parts := PackedStringArray()
-	for line in _lines:
-		parts.append("[color=#8a7a63]对手[/color]  %s" % line)
-	log_label.text = "\n".join(parts)
+	log_label.text = "\n".join(PackedStringArray(_lines))
 	_refresh_footer()
 
 

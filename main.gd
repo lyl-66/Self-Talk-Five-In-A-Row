@@ -447,12 +447,12 @@ func _play(cell: Vector2i, player: int) -> void:
 		_set_status("对手思考中…")
 
 
-## 一局收尾：追加一行明细、写回总分、结束本局话题（按棋子数补一句告别语）。
+## 一局收尾：追加一行明细、写回总分、结束本局话题（按棋子数和胜负补一句告别语）。
 func _record_game(result: String) -> void:
 	store.append_game(result, _stone_count())
 	store.save_totals()
 	_refresh_score()
-	talk_window.end_topic(_stone_count(), _talk_context())
+	talk_window.end_topic(_stone_count(), result, _talk_context())
 
 
 ## 台词里能用的变量。落点统一写成 H8 这种样式，没落子时用破折号。

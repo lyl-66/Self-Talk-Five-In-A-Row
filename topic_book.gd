@@ -5,10 +5,12 @@ extends RefCounted
 ## 如果 user://topics.txt 存在就用它（方便你自己改台词，不用动工程文件）。
 ##
 ## 文件格式（详见 topics.txt 开头的说明）：
-##   ### 话题：标题      开始一个话题
-##   一行一句台词        这一段是话题正文，对手每落一子说一句
-##   === 垫场            开始「正文说完之后的垫场句池」（全话题共用）
-##   === 结束 32         开始「本局在 32 子以内结束时」的告别语
+##   ### 话题：标题              开始一个话题
+##   一行一句台词                 这一段是话题正文，对手每落一子说一句
+##   === 垫场                     开始「正文说完之后的垫场句池」（全话题共用）
+##   === 结束 32 玩家赢           开始「本局在 32 子以内结束、且玩家赢了」的告别语
+##   === 结束 32 玩家输           同上，但玩家输了
+##   === 结束 32                  不写胜负标记就是两种结果都能用的兜底句
 ##
 ## 解析一律容错：空行和 `//` 注释忽略，缺哪一档结束语就退到写得有的一档，
 ## 整份文件读不出来时 topics 为空，上层会回落到占位台词。
@@ -25,8 +27,15 @@ const ENDING_TIERS: Array[int] = [4, 8, 16, 32, 64, 128, 225]
 const KNOWN_VARS: Array[String] = [
 	"move", "cell", "player_move", "my_score", "player_score", "draws", "topic",
 ]
+## 结束语行上能写的胜负标记 → 内部分类名。写在前面的优先匹配前缀。
+const ENDING_LABELS: Dictionary = {
+	"玩家赢": "player_win", "玩家胜": "player_win",
+	"玩家输": "player_lose", "玩家败": "player_lose",
+	"和棋": "draw", "平局": "draw", "和局": "draw",
+}
 
-## 每个话题：{ "title": String, "body": Array, "endings": { 档位: Array } }
+## 每个话题：{ "title": String, "body": Array,
+##             "endings": { 档位: { 胜负分类: Array } } }
 var topics: Array = []
 ## 正文说完之后的垫场句池（全话题共用）。
 var filler: Array = []
@@ -68,16 +77,54 @@ func topic_at(index: int) -> Dictionary:
 	return topics[abs(index) % topics.size()]
 
 
-## 按本局结束时的棋子数挑一档结束语；这一档没写就往更大的档找，都没有就返回空。
-func ending_lines(topic: Dictionary, final_stones: int) -> Array:
+## 按本局结束时的棋子数和胜负挑一档结束语：先在这一档里找「这个结果专用的」，
+## 再找不带标记的兜底句；整档都没有就往更大的档找，都没有就返回空。
+## result 取 main.gd 记分用的那几个值："player"（玩家赢）/ "ai"（对手赢）/ "draw"。
+func ending_lines(topic: Dictionary, final_stones: int, result: String = "") -> Array:
 	var endings: Dictionary = topic.get("endings", {})
+	var key := outcome_key(result)
 	for tier: int in ENDING_TIERS:
-		if final_stones <= tier and not (endings.get(tier, []) as Array).is_empty():
-			return endings[tier]
+		if final_stones <= tier:
+			var lines := _bucket(endings, tier, key)
+			if not lines.is_empty():
+				return lines
 	for tier: int in ENDING_TIERS:
-		if not (endings.get(tier, []) as Array).is_empty():
-			return endings[tier]
+		var lines := _bucket(endings, tier, key)
+		if not lines.is_empty():
+			return lines
 	return []
+
+
+## 把记分用的结果名翻成结束语用的分类名。
+static func outcome_key(result: String) -> String:
+	match result:
+		"player":
+			return "player_win"
+		"ai":
+			return "player_lose"
+		"draw":
+			return "draw"
+	return ""
+
+
+## 取某一档里对某个结果该说的话：先找专用句，没有再退回不带标记的兜底句。
+func _bucket(endings: Dictionary, tier: int, key: String) -> Array:
+	var by_key: Dictionary = endings.get(tier, {})
+	if not key.is_empty():
+		var exact: Array = by_key.get(key, [])
+		if not exact.is_empty():
+			return exact
+	return by_key.get("", [])
+
+
+## 把行上写的胜负标记翻成内部分类名；认不出来返回 "?"。
+func _label_key(label: String) -> String:
+	if label.is_empty():
+		return ""
+	for name: String in ENDING_LABELS:
+		if label.begins_with(name):
+			return ENDING_LABELS[name]
+	return "?"
 
 
 ## 把攒下来的毛病拼成一句能显示在界面上的话（最多列三条，避免撑爆状态栏）。
@@ -105,6 +152,7 @@ func _parse(text: String) -> void:
 	var endings: Dictionary = {}
 	var mode := "filler"
 	var tier := 0
+	var ending_key := ""
 
 	var lines := text.split("\n")
 	for i: int in lines.size():
@@ -123,6 +171,8 @@ func _parse(text: String) -> void:
 			body = []
 			endings = {}
 			mode = "body"
+			tier = 0
+			ending_key = ""
 			_check_vars(line_number, title)
 			continue
 		if line.begins_with("==="):
@@ -130,13 +180,22 @@ func _parse(text: String) -> void:
 			if head.begins_with("垫场"):
 				mode = "filler"
 			elif head.begins_with("结束"):
-				tier = int(head.substr(2).strip_edges())
+				var parts := head.substr(2).strip_edges().replace("\t", " ").split(" ", false)
+				tier = int(parts[0]) if not parts.is_empty() else 0
+				var label := " ".join(parts.slice(1))
+				ending_key = _label_key(label)
+				if ending_key == "?":
+					_note_issue(line_number, "认不出的胜负标记「%s」（写 玩家赢 / 玩家输 / 和棋，或者不写）" % label)
+					ending_key = ""
 				if not ENDING_TIERS.has(tier):
 					_note_issue(line_number, "档位 %d 用不到（只能是 4/8/16/32/64/128/225）" % tier)
 				if title.is_empty():
 					_note_issue(line_number, "这段结束语没有话题（前面缺 `### 话题：标题`）")
 				if not endings.has(tier):
-					endings[tier] = []
+					endings[tier] = {}
+				var by_key: Dictionary = endings[tier]
+				if not by_key.has(ending_key):
+					by_key[ending_key] = []
 				mode = "ending"
 			else:
 				_note_issue(line_number, "看不懂的分段标记「%s」" % line)
@@ -146,7 +205,7 @@ func _parse(text: String) -> void:
 			"body":
 				body.append(line)
 			"ending":
-				endings[tier].append(line)
+				endings[tier][ending_key].append(line)
 			_:
 				filler.append(line)
 	_store(title, body, endings)
