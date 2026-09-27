@@ -41,6 +41,9 @@ func set_score(player_wins: int, ai_wins: int, draws: int, games: int, last: Dic
 	opponent_wins_label.text = str(ai_wins)
 	draw_label.text = str(draws)
 	recent_label.text = _format_recent(games, last)
+	# 完整时间放进悬停提示，不占窗口宽度；没有记录时要连上一条一起清掉，
+	# 否则清空比分之后鼠标停上去还会显示上一局的时间。
+	recent_label.tooltip_text = str(last.get("time", "")).replace("T", " ") if not last.is_empty() else ""
 	clear_button.disabled = games <= 0
 
 
@@ -61,11 +64,9 @@ func _on_clear_confirmed() -> void:
 
 
 ## 拼出底部那行摘要，例如「已保存 6 局 · 最近 玩家胜 43 手」。
+## 只管拼字符串；悬停提示由 set_score() 负责，免得这个纯函数偷偷改控件。
 func _format_recent(games: int, last: Dictionary) -> String:
 	if games <= 0 or last.is_empty():
 		return "还没有对局记录"
 	var result := str(RESULT_LABELS.get(str(last.get("result", "")), "对局"))
-	var text := "已保存 %d 局 · 最近 %s %d 手" % [games, result, int(last.get("moves", 0))]
-	# 完整时间放进悬停提示，不占窗口宽度
-	recent_label.tooltip_text = str(last.get("time", "")).replace("T", " ")
-	return text
+	return "已保存 %d 局 · 最近 %s %d 手" % [games, result, int(last.get("moves", 0))]

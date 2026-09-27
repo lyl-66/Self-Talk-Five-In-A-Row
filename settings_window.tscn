@@ -1,19 +1,18 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://5kcu8ndjx5gv"]
 
-[ext_resource type="Script" path="res://settings_window.gd" id="1_settings"]
+[ext_resource type="Script" uid="uid://ctsfvqcb4p6oh" path="res://settings_window.gd" id="1_settings"]
 
-[node name="SettingsWindow" type="Window"]
+[node name="SettingsWindow" type="Window" unique_id=544202831]
 title = "设置"
-initial_position = 0
 size = Vector2i(380, 400)
+visible = false
 min_size = Vector2i(240, 252)
 content_scale_size = Vector2i(380, 400)
 content_scale_mode = 1
 content_scale_aspect = 4
-visible = false
 script = ExtResource("1_settings")
 
-[node name="Column" type="VBoxContainer" parent="."]
+[node name="Column" type="VBoxContainer" parent="." unique_id=2044476426]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -25,70 +24,70 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 10
 
-[node name="PlayerFirst" type="CheckButton" parent="Column"]
+[node name="PlayerFirst" type="CheckButton" parent="Column" unique_id=1809061500]
 layout_mode = 2
 theme_override_font_sizes/font_size = 17
 text = "玩家执黑先手（下一局生效）"
 
-[node name="PositionEval" type="CheckButton" parent="Column"]
+[node name="PositionEval" type="CheckButton" parent="Column" unique_id=935961140]
 layout_mode = 2
 theme_override_font_sizes/font_size = 17
 text = "对手启用局面评估"
 
-[node name="TwoPlySearch" type="CheckButton" parent="Column"]
+[node name="TwoPlySearch" type="CheckButton" parent="Column" unique_id=1222214622]
 layout_mode = 2
 theme_override_font_sizes/font_size = 17
 text = "对手两层搜索（需局面评估）"
 
-[node name="Forbidden" type="CheckButton" parent="Column"]
+[node name="Forbidden" type="CheckButton" parent="Column" unique_id=849825855]
 layout_mode = 2
 theme_override_font_sizes/font_size = 17
 text = "禁手规则（三三/四四/长连判负）"
 
-[node name="Colors" type="GridContainer" parent="Column"]
+[node name="Colors" type="GridContainer" parent="Column" unique_id=1596699477]
 layout_mode = 2
 theme_override_constants/h_separation = 14
 theme_override_constants/v_separation = 8
 columns = 2
 
-[node name="BoardLabel" type="Label" parent="Column/Colors"]
+[node name="BoardLabel" type="Label" parent="Column/Colors" unique_id=769742522]
 layout_mode = 2
 theme_override_font_sizes/font_size = 17
 text = "棋盘底色"
 vertical_alignment = 1
 
-[node name="BoardColor" type="ColorPickerButton" parent="Column/Colors"]
-custom_minimum_size = Vector2i(150, 30)
+[node name="BoardColor" type="ColorPickerButton" parent="Column/Colors" unique_id=770164246]
+custom_minimum_size = Vector2(150, 30)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="LineLabel" type="Label" parent="Column/Colors"]
+[node name="LineLabel" type="Label" parent="Column/Colors" unique_id=811653577]
 layout_mode = 2
 theme_override_font_sizes/font_size = 17
 text = "格线颜色"
 vertical_alignment = 1
 
-[node name="LineColor" type="ColorPickerButton" parent="Column/Colors"]
-custom_minimum_size = Vector2i(150, 30)
+[node name="LineColor" type="ColorPickerButton" parent="Column/Colors" unique_id=1506385905]
+custom_minimum_size = Vector2(150, 30)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="BackgroundLabel" type="Label" parent="Column/Colors"]
+[node name="BackgroundLabel" type="Label" parent="Column/Colors" unique_id=1544178073]
 layout_mode = 2
 theme_override_font_sizes/font_size = 17
 text = "窗口背景"
 vertical_alignment = 1
 
-[node name="BackgroundColor" type="ColorPickerButton" parent="Column/Colors"]
-custom_minimum_size = Vector2i(150, 30)
+[node name="BackgroundColor" type="ColorPickerButton" parent="Column/Colors" unique_id=175252746]
+custom_minimum_size = Vector2(150, 30)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Spacer" type="Control" parent="Column"]
+[node name="Spacer" type="Control" parent="Column" unique_id=656376268]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="Reset" type="Button" parent="Column"]
+[node name="Reset" type="Button" parent="Column" unique_id=1289247181]
 layout_mode = 2
 size_flags_horizontal = 4
 theme_override_font_sizes/font_size = 16

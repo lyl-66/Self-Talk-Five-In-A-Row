@@ -60,7 +60,7 @@ func _on_close_requested() -> void:
 	closed.emit()
 
 
-## 开关变化：两个「需要局面评估」的依赖在这里补上。
+## 开关变化：这里只补一条依赖——两层搜索离不开局面评估。
 func _on_toggle_changed(_pressed: bool) -> void:
 	if _syncing:
 		return

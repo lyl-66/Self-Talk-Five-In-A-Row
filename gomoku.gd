@@ -133,10 +133,14 @@ static func _run_through(cells: PackedInt32Array, x: int, y: int, dir: Vector2i,
 
 
 ## 这个方向上，再补一子就能连五的所有空点（也就是这条线的「成五点」）。
+## 前提是这条线现在**正好四连**：连子不够就补不成五；已经有五了，那也不叫「四」。
+## 少了这个前提，一条已经连成五的线会被当成「四」，黑棋的必胜手会被误判成四四。
 ## 会临时改动传入的 cells 并还原，调用方传副本进来。
 static func _five_points(cells: PackedInt32Array, x: int, y: int, dir: Vector2i,
 		player: int) -> Array[Vector2i]:
 	var points: Array[Vector2i] = []
+	if _run_through(cells, x, y, dir, player) != 4:
+		return points
 	for step: int in range(-REACH, REACH + 1):
 		if step == 0:
 			continue
@@ -145,7 +149,7 @@ static func _five_points(cells: PackedInt32Array, x: int, y: int, dir: Vector2i,
 		if not in_bounds(px, py) or cells[index(px, py)] != EMPTY:
 			continue
 		cells[index(px, py)] = player
-		var reached := _run_through(cells, x, y, dir, player) >= 5
+		var reached := _run_through(cells, x, y, dir, player) == 5
 		cells[index(px, py)] = EMPTY
 		if reached:
 			points.append(Vector2i(px, py))

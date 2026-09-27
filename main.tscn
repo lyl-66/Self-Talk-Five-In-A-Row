@@ -4,7 +4,7 @@
 [ext_resource type="Script" uid="uid://bw7nfplncwldx" path="res://board.gd" id="2_board"]
 [ext_resource type="PackedScene" path="res://score_window.tscn" id="3_score"]
 [ext_resource type="PackedScene" path="res://talk_window.tscn" id="4_talk"]
-[ext_resource type="PackedScene" path="res://settings_window.tscn" id="5_settings"]
+[ext_resource type="PackedScene" uid="uid://5kcu8ndjx5gv" path="res://settings_window.tscn" id="5_settings"]
 
 [node name="Main" type="Node2D" unique_id=164783819]
 script = ExtResource("1_main")
@@ -22,7 +22,7 @@ text = "五子棋"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="SettingsButton" type="Button" parent="."]
+[node name="SettingsButton" type="Button" parent="." unique_id=1825561665]
 offset_left = 76.0
 offset_top = 22.0
 offset_right = 164.0
@@ -30,30 +30,30 @@ offset_bottom = 58.0
 theme_override_font_sizes/font_size = 16
 text = "设置"
 
-[node name="ButtonRow" type="HBoxContainer" parent="."]
+[node name="ButtonRow" type="HBoxContainer" parent="." unique_id=1198234165]
 offset_left = 100.0
 offset_top = 664.0
 offset_right = 620.0
 offset_bottom = 706.0
 theme_override_constants/separation = 20
 
-[node name="ScoreButton" type="Button" parent="ButtonRow"]
-custom_minimum_size = Vector2i(160, 42)
+[node name="ScoreButton" type="Button" parent="ButtonRow" unique_id=914637542]
+custom_minimum_size = Vector2(160, 42)
 layout_mode = 2
 text = "比分窗口"
 
 [node name="RestartButton" type="Button" parent="ButtonRow" unique_id=1886782764]
-custom_minimum_size = Vector2i(160, 42)
+custom_minimum_size = Vector2(160, 42)
 layout_mode = 2
 text = "重新开始"
 
-[node name="TalkButton" type="Button" parent="ButtonRow"]
-custom_minimum_size = Vector2i(160, 42)
+[node name="TalkButton" type="Button" parent="ButtonRow" unique_id=1295044413]
+custom_minimum_size = Vector2(160, 42)
 layout_mode = 2
 text = "对话窗口"
 
-[node name="ScoreWindow" parent="." instance=ExtResource("3_score")]
+[node name="ScoreWindow" parent="." unique_id=1116552824 instance=ExtResource("3_score")]
 
-[node name="TalkWindow" parent="." instance=ExtResource("4_talk")]
+[node name="TalkWindow" parent="." unique_id=2074144161 instance=ExtResource("4_talk")]
 
-[node name="SettingsWindow" parent="." instance=ExtResource("5_settings")]
+[node name="SettingsWindow" parent="." unique_id=1813590437 instance=ExtResource("5_settings")]

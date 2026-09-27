@@ -102,9 +102,8 @@ func choose_move(cells: PackedInt32Array) -> Vector2i:
 		return Vector2i(Gomoku.SIZE / 2, Gomoku.SIZE / 2)
 
 	var candidates := _collect_candidates(cells)
-	# 黑白对调时黑棋是电脑自己：开着禁手就先把自己不能下的点去掉
-	if use_forbidden and _me == Gomoku.BLACK:
-		candidates = _drop_forbidden(cells, candidates)
+	# 黑白对调时黑棋是电脑自己：把自己不能下的禁手点去掉（内部会判断该不该做）
+	candidates = _drop_forbidden(cells, candidates)
 	if candidates.is_empty():
 		return Vector2i(-1, -1)
 
@@ -170,6 +169,9 @@ func estimate_tension(cells: PackedInt32Array) -> float:
 ## 局面评估：从 player 的角度给整个盘面打分，分数越高对 player 越有利。
 ## 主项是「双方一手能做出的最大棋型」；此外从第二个「能做活三以上的点」算起，
 ## 每个再加一份复合威胁分——两个活三远比一个活三可怕，靠主项是体现不出来的。
+## 注意这里数的是**点**不是**威胁线**：一个活三两端各是一个点，
+## 所以它自己也会拿到一份复合分；真正的两条活三则是四个点，仍然更重。
+## 想让它严格从「第二条活三」算起，得先按线去重。
 func evaluate_position(cells: PackedInt32Array, player: int) -> float:
 	var rival := Gomoku.opponent(player)
 	var my_best := 0

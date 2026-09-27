@@ -6,8 +6,6 @@ extends RefCounted
 ## 跟着用户账号走，不随游戏更新或重新下载丢失。
 ## 读取一律容错：文件缺失、被手改坏、字段类型不对，都当作从零开始，绝不让游戏崩。
 
-## 存档格式版本，以后加字段好做迁移。
-const VERSION: int = 1
 ## 总分文件。
 const SCORE_PATH: String = "user://score.cfg"
 ## 每局明细文件，JSON Lines：一行一个 JSON 对象。
@@ -32,32 +30,26 @@ func load_from_disk() -> void:
 	var config := ConfigFile.new()
 	if config.load(SCORE_PATH) != OK:
 		return
-	player_wins = _pick_int(config, "total", "player_wins")
-	ai_wins = _pick_int(config, "total", "ai_wins")
-	draw_count = _pick_int(config, "total", "draws")
-	games_played = _pick_int(config, "total", "games")
+	player_wins = ConfigStore.pick_int(config, "total", "player_wins")
+	ai_wins = ConfigStore.pick_int(config, "total", "ai_wins")
+	draw_count = ConfigStore.pick_int(config, "total", "draws")
+	games_played = ConfigStore.pick_int(config, "total", "games")
 
 
-## 把总分写回磁盘：先写 .tmp 再替换，避免写一半断电把存档写花。
+## 把总分写回磁盘。写法和容错都在 ConfigStore 里。
 func save_totals() -> void:
 	var config := ConfigFile.new()
-	config.set_value("meta", "version", VERSION)
 	config.set_value("total", "player_wins", player_wins)
 	config.set_value("total", "ai_wins", ai_wins)
 	config.set_value("total", "draws", draw_count)
 	config.set_value("total", "games", games_played)
-	var temp_path := SCORE_PATH + ".tmp"
-	if config.save(temp_path) != OK:
-		push_warning("总比分写入失败：%s" % temp_path)
-		return
-	if DirAccess.rename_absolute(ProjectSettings.globalize_path(temp_path),
-			ProjectSettings.globalize_path(SCORE_PATH)) != OK:
-		push_warning("总比分替换失败：%s" % SCORE_PATH)
+	ConfigStore.save_atomic(config, SCORE_PATH)
 
 
 ## 追加一局明细并让局数加一；result 取 player / ai / draw。
+## 局数在明细真的写进去之后才加：写失败时窗口上的「已保存 N 局」
+## 不能比明细多出一条。
 func append_game(result: String, moves: int) -> void:
-	games_played += 1
 	# READ_WRITE 不会创建文件，首次要靠 WRITE 建出来
 	var file := FileAccess.open(HISTORY_PATH, FileAccess.READ_WRITE)
 	if file == null:
@@ -72,6 +64,7 @@ func append_game(result: String, moves: int) -> void:
 		"moves": moves,
 	}))
 	file.close()
+	games_played += 1
 
 
 ## 取最近一局的明细，用来在窗口上显示一行摘要；没有记录时返回空字典。
@@ -101,10 +94,6 @@ func clear() -> void:
 	if not FileAccess.file_exists(HISTORY_PATH):
 		return
 	var stamp := Time.get_datetime_string_from_system().replace(":", "-")
-	DirAccess.rename_absolute(ProjectSettings.globalize_path(HISTORY_PATH),
-		ProjectSettings.globalize_path("user://history-%s.jsonl" % stamp))
-
-
-## 读一个整数配置项：缺失、类型不对或负数都当作 0。
-func _pick_int(config: ConfigFile, section: String, key: String) -> int:
-	return maxi(0, int(config.get_value(section, key, 0)))
+	if DirAccess.rename_absolute(ProjectSettings.globalize_path(HISTORY_PATH),
+			ProjectSettings.globalize_path("user://history-%s.jsonl" % stamp)) != OK:
+		push_warning("旧明细归档失败：%s" % HISTORY_PATH)

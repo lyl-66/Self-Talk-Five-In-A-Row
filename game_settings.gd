@@ -4,10 +4,8 @@ extends RefCounted
 ## 设置存档：先手选择、对手棋力的两个开关、禁手规则、三处配色，
 ## 另外还记一个「话题轮换到哪了」的进度。写在 user://settings.cfg。
 ## 写法沿用另外两套存档：先写 .tmp 再替换，读取一律容错
-## （文件缺失、被改坏、类型不对，都回落成默认值）。
+## （文件缺失、被改坏、类型不对，都回落成默认值），这些都走 ConfigStore。
 
-## 存档格式版本。
-const VERSION: int = 1
 ## 设置文件路径。
 const PATH: String = "user://settings.cfg"
 
@@ -42,25 +40,27 @@ var background_color: Color = DEFAULT_BACKGROUND_COLOR
 ## 从磁盘读回设置；文件缺失或读不出来就保持默认值。
 func load_from_disk() -> void:
 	reset_to_defaults()
+	next_topic = 0
 	var config := ConfigFile.new()
 	if config.load(PATH) != OK:
 		return
-	next_topic = maxi(0, int(config.get_value("topics", "next", 0)))
-	player_goes_first = _pick_bool(config, "sides", "player_goes_first", player_goes_first)
-	use_position_eval = _pick_bool(config, "ai", "position_eval", use_position_eval)
-	use_search = _pick_bool(config, "ai", "two_ply_search", use_search)
-	use_forbidden = _pick_bool(config, "rules", "forbidden", use_forbidden)
-	board_color = _pick_color(config, "colors", "board", board_color)
-	line_color = _pick_color(config, "colors", "line", line_color)
-	background_color = _pick_color(config, "colors", "background", background_color)
+	next_topic = ConfigStore.pick_int(config, "topics", "next")
+	player_goes_first = ConfigStore.pick_bool(config, "sides", "player_goes_first", player_goes_first)
+	use_position_eval = ConfigStore.pick_bool(config, "ai", "position_eval", use_position_eval)
+	use_search = ConfigStore.pick_bool(config, "ai", "two_ply_search", use_search)
+	use_forbidden = ConfigStore.pick_bool(config, "rules", "forbidden", use_forbidden)
+	board_color = ConfigStore.pick_color(config, "colors", "board", board_color)
+	line_color = ConfigStore.pick_color(config, "colors", "line", line_color)
+	background_color = ConfigStore.pick_color(config, "colors", "background", background_color)
 	# 两层搜索离不开局面评估：读到不合法的组合就把它补上
 	if use_search:
 		use_position_eval = true
 
 
-## 恢复默认值（不写盘）。话题轮换位置也会回到第一个。
+## 恢复默认值（不写盘）。只管设置窗口里列出来的那些项，
+## 「话题轮换到哪了」是玩家看不见的进度，归零放在 load_from_disk() 里，
+## 免得点一下「恢复默认」把话题悄悄退回第一个。
 func reset_to_defaults() -> void:
-	next_topic = 0
 	player_goes_first = true
 	use_position_eval = false
 	use_search = false
@@ -70,10 +70,9 @@ func reset_to_defaults() -> void:
 	background_color = DEFAULT_BACKGROUND_COLOR
 
 
-## 把当前设置写回磁盘：先写 .tmp 再替换，避免写一半断电把设置写花。
+## 把当前设置写回磁盘。写法和容错都在 ConfigStore 里。
 func save() -> void:
 	var config := ConfigFile.new()
-	config.set_value("meta", "version", VERSION)
 	config.set_value("topics", "next", next_topic)
 	config.set_value("sides", "player_goes_first", player_goes_first)
 	config.set_value("ai", "position_eval", use_position_eval)
@@ -82,22 +81,4 @@ func save() -> void:
 	config.set_value("colors", "board", board_color)
 	config.set_value("colors", "line", line_color)
 	config.set_value("colors", "background", background_color)
-	var temp_path := PATH + ".tmp"
-	if config.save(temp_path) != OK:
-		push_warning("设置写入失败：%s" % temp_path)
-		return
-	if DirAccess.rename_absolute(ProjectSettings.globalize_path(temp_path),
-			ProjectSettings.globalize_path(PATH)) != OK:
-		push_warning("设置替换失败：%s" % PATH)
-
-
-## 读一个布尔项；缺失或类型不对就用默认值。
-func _pick_bool(config: ConfigFile, section: String, key: String, fallback: bool) -> bool:
-	var value: Variant = config.get_value(section, key, fallback)
-	return bool(value) if value is bool else fallback
-
-
-## 读一个颜色项；缺失或类型不对就用默认值。
-func _pick_color(config: ConfigFile, section: String, key: String, fallback: Color) -> Color:
-	var value: Variant = config.get_value(section, key, fallback)
-	return value if value is Color else fallback
+	ConfigStore.save_atomic(config, PATH)

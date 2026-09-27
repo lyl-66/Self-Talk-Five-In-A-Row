@@ -27,9 +27,12 @@ static func load_all() -> Dictionary:
 		# 默认值给空字符串而不是 null：传 null 会被 Godot 当成「没给默认值」并报错
 		var position: Variant = config.get_value(key, "position", "")
 		var size: Variant = config.get_value(key, "size", "")
-		var opened: Variant = config.get_value(key, "visible", true)
 		if position is Vector2i and size is Vector2i:
-			layout[key] = {"position": position, "size": size, "visible": bool(opened)}
+			layout[key] = {
+				"position": position,
+				"size": size,
+				"visible": ConfigStore.pick_bool(config, key, "visible", true),
+			}
 	return layout
 
 
@@ -44,10 +47,4 @@ static func save_all(windows: Dictionary) -> void:
 		config.set_value(key, "position", window.position)
 		config.set_value(key, "size", window.size)
 		config.set_value(key, "visible", window.visible)
-	var temp_path := PATH + ".tmp"
-	if config.save(temp_path) != OK:
-		push_warning("窗口布局写入失败：%s" % temp_path)
-		return
-	if DirAccess.rename_absolute(ProjectSettings.globalize_path(temp_path),
-			ProjectSettings.globalize_path(PATH)) != OK:
-		push_warning("窗口布局替换失败：%s" % PATH)
+	ConfigStore.save_atomic(config, PATH)
