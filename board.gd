@@ -119,12 +119,18 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, Vector2(board_size, board_size)), board_color)
 	draw_rect(Rect2(Vector2.ZERO, Vector2(board_size, board_size)), border, false, 2.0)
 
+	# 线宽按画布缩放反算：窗口比设计尺寸小时（缩放 < 1），1 像素宽的竖线会被抹掉，
+	# 横向的因为正好落在整像素行上才侥幸留下。
+	var device_scale: Vector2 = get_viewport_transform().get_scale()
+	var line_width: float = maxf(1.0,
+		1.2 / maxf(0.001, minf(device_scale.x, device_scale.y)))
 	var edge := board_size - MARGIN
 	for i: int in Gomoku.SIZE:
 		var offset := MARGIN + CELL * float(i)
-		draw_line(Vector2(MARGIN, offset), Vector2(edge, offset), line_color, 1.0)
-		draw_line(Vector2(offset, MARGIN), Vector2(offset, edge), line_color, 1.0)
-	draw_rect(Rect2(MARGIN, MARGIN, edge - MARGIN, edge - MARGIN), line_color, false, 2.0)
+		draw_line(Vector2(MARGIN, offset), Vector2(edge, offset), line_color, line_width)
+		draw_line(Vector2(offset, MARGIN), Vector2(offset, edge), line_color, line_width)
+	draw_rect(Rect2(MARGIN, MARGIN, edge - MARGIN, edge - MARGIN), line_color, false,
+		line_width + 1.0)
 
 	for star in STAR_POINTS:
 		draw_circle(_to_position(star), 3.0, line_color)
