@@ -1,7 +1,8 @@
 class_name GameSettings
 extends RefCounted
 
-## 设置存档：先手选择、电脑棋力的三个开关 + 三处配色。写在 user://settings.cfg。
+## 设置存档：先手选择、对手棋力的两个开关、禁手规则、三处配色，
+## 另外还记一个「话题轮换到哪了」的进度。写在 user://settings.cfg。
 ## 写法沿用另外两套存档：先写 .tmp 再替换，读取一律容错
 ## （文件缺失、被改坏、类型不对，都回落成默认值）。
 
@@ -14,8 +15,11 @@ const PATH: String = "user://settings.cfg"
 const DEFAULT_BOARD_COLOR := Color("e6c891")
 ## 格线颜色默认值。
 const DEFAULT_LINE_COLOR := Color("4a3520")
-## 窗口背景色默认值（三个窗口共用）。
+## 窗口背景色默认值（几个窗口共用）。
 const DEFAULT_BACKGROUND_COLOR := Color(0.945, 0.933, 0.906)
+
+## 话题轮换到的位置：不是玩家可调项，只是需要跨次记住的进度。
+var next_topic: int = 0
 
 ## 玩家是否执黑先手；关掉就是玩家执白、对手执黑先下。默认开。
 var player_goes_first: bool = true
@@ -41,6 +45,7 @@ func load_from_disk() -> void:
 	var config := ConfigFile.new()
 	if config.load(PATH) != OK:
 		return
+	next_topic = maxi(0, int(config.get_value("topics", "next", 0)))
 	player_goes_first = _pick_bool(config, "sides", "player_goes_first", player_goes_first)
 	use_position_eval = _pick_bool(config, "ai", "position_eval", use_position_eval)
 	use_search = _pick_bool(config, "ai", "two_ply_search", use_search)
@@ -53,8 +58,9 @@ func load_from_disk() -> void:
 		use_position_eval = true
 
 
-## 恢复默认值（不写盘）。
+## 恢复默认值（不写盘）。话题轮换位置也会回到第一个。
 func reset_to_defaults() -> void:
+	next_topic = 0
 	player_goes_first = true
 	use_position_eval = false
 	use_search = false
@@ -68,6 +74,7 @@ func reset_to_defaults() -> void:
 func save() -> void:
 	var config := ConfigFile.new()
 	config.set_value("meta", "version", VERSION)
+	config.set_value("topics", "next", next_topic)
 	config.set_value("sides", "player_goes_first", player_goes_first)
 	config.set_value("ai", "position_eval", use_position_eval)
 	config.set_value("ai", "two_ply_search", use_search)

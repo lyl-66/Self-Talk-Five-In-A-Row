@@ -2,7 +2,8 @@ extends Node2D
 
 ## 五子棋人机对战：默认玩家执黑先手、对手执白；先手可以在设置里对调
 ## （玩家改执白后手，对手执黑先下）。
-## 比分跨局累计并长期保存；对手每落一子会在独立的对话窗口里说一句话；
+## 比分跨局累计并长期保存；对手每落一子会在独立的对话窗口里说一句话，
+## 台词按「每局一个话题」组织，话题写在 topics.txt 里（可以放在用户目录覆盖）。
 ## 对手的棋力（局面评估 / 两层搜索）与禁手规则、界面配色都在设置窗口里开关。
 
 ## 对手思考时间的下限：开局这种平淡局面就等这么久。
@@ -57,9 +58,15 @@ var game_over: bool = false
 var store: ScoreStore = ScoreStore.new()
 ## 设置：先手、棋力开关与配色，改动立刻写盘。
 var settings: GameSettings = GameSettings.new()
+## 话题本：每局开一个话题，正文一句一句说，结束时按棋子数补一句告别。
+var topic_book: TopicBook = TopicBook.new()
 
 ## 每次新开局自增；对手等待结束后用它判断这一手是否已经作废。
 var _game_id: int = 0
+## 本局用的话题，以及最后两手落在哪（台词里的 {cell} / {player_move} 要用）。
+var _current_topic: Dictionary = {}
+var _last_cell: Vector2i = Vector2i(-1, -1)
+var _last_human_cell: Vector2i = Vector2i(-1, -1)
 
 
 ## 读回设置与档案、挂字体主题、接好信号，把窗口摆回上次的位置，然后开一局。
@@ -71,6 +78,7 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_layout)
 	settings.load_from_disk()
 	store.load_from_disk()
+	talk_window.book = topic_book
 	_apply_ui_theme()
 	board.point_clicked.connect(_on_board_point_clicked)
 	score_button.pressed.connect(_on_score_button_pressed)
@@ -221,8 +229,8 @@ func _clamp_to_screen(position: Vector2i, size: Vector2i) -> Vector2i:
 			maxi(screen.position.y, screen.position.y + screen.size.y - size.y)))
 
 
-## 重开一局：按设置定下双方的颜色、清空棋盘、换掉对手实例。
-## 玩家执白时由对手先下第一手。比分和对话日志都跨局保留。
+## 重开一局：按设置定下双方的颜色、清空棋盘、换掉对手实例、换一个话题。
+## 玩家执白时由对手先下第一手。比分跨局保留，对话日志每局清空。
 func new_game() -> void:
 	_game_id += 1
 	human_player = Gomoku.BLACK if settings.player_goes_first else Gomoku.WHITE
@@ -235,10 +243,13 @@ func new_game() -> void:
 	ai.use_forbidden = settings.use_forbidden
 	current_player = Gomoku.BLACK
 	game_over = false
+	_last_cell = Vector2i(-1, -1)
+	_last_human_cell = Vector2i(-1, -1)
 	board.hover_player = human_player
 	board.reset()
 	score_window.set_sides(human_player == Gomoku.BLACK)
 	_refresh_score()
+	_start_topic()
 
 	if current_player == human_player:
 		_set_input_enabled(true)
@@ -248,6 +259,16 @@ func new_game() -> void:
 		_set_input_enabled(false)
 		_set_status("玩家执%s后手，对手先下" % _color_name(human_player))
 		_run_ai_turn()
+
+
+## 开一局新话题：每次开局都重读台词文件（改完下一局就生效），按轮换位置挑一个。
+func _start_topic() -> void:
+	topic_book.load_from_disk()
+	_current_topic = topic_book.topic_at(settings.next_topic)
+	talk_window.start_topic(_current_topic, topic_book.filler)
+	if topic_book.topic_count() > 0:
+		settings.next_topic = (settings.next_topic + 1) % topic_book.topic_count()
+		settings.save()
 
 
 ## 玩家点棋盘：过滤掉不该接受的点击，落子后交给对手应手。
@@ -344,9 +365,8 @@ func _run_ai_turn() -> void:
 	if token != _game_id or game_over:
 		return
 	_play(move, ai_player)
-	# 每落一子说一句。想让「一段话分几手说完」，
-	# 先 talk_window.queue_passage(整段话)，这里自然就会一次只取一行。
-	talk_window.speak_move(_stone_count(), move)
+	# 每落一子说一句：正文优先，正文说完就从垫场句池里取
+	talk_window.speak_move(_stone_count(), move, _talk_context())
 	if not game_over:
 		_set_input_enabled(true)
 
@@ -369,6 +389,9 @@ func _think_delay(move: Vector2i) -> float:
 func _play(cell: Vector2i, player: int) -> void:
 	cells[Gomoku.index(cell.x, cell.y)] = player
 	board.place(cell, player)
+	_last_cell = cell
+	if player == human_player:
+		_last_human_cell = cell
 
 	# 开着禁手时黑棋只有「正好五连」才算胜：六连以上交给下面的禁手判罚。
 	# 注意禁手是绑黑棋的，不是绑玩家的——先后手可以对调。
@@ -424,11 +447,25 @@ func _play(cell: Vector2i, player: int) -> void:
 		_set_status("对手思考中…")
 
 
-## 一局收尾：追加一行明细、写回总分，再刷新窗口。
+## 一局收尾：追加一行明细、写回总分、结束本局话题（按棋子数补一句告别语）。
 func _record_game(result: String) -> void:
 	store.append_game(result, _stone_count())
 	store.save_totals()
 	_refresh_score()
+	talk_window.end_topic(_stone_count(), _talk_context())
+
+
+## 台词里能用的变量。落点统一写成 H8 这种样式，没落子时用破折号。
+func _talk_context() -> Dictionary:
+	return {
+		"move": _stone_count(),
+		"cell": Gomoku.cell_name(_last_cell) if _last_cell.x >= 0 else "—",
+		"player_move": Gomoku.cell_name(_last_human_cell) if _last_human_cell.x >= 0 else "—",
+		"my_score": store.ai_wins,
+		"player_score": store.player_wins,
+		"draws": store.draw_count,
+		"topic": str(_current_topic.get("title", "")),
+	}
 
 
 ## 数一数盘上已经有多少颗子，既当手数也算作下一句话的编号。

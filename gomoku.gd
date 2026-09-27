@@ -40,6 +40,11 @@ static func opponent(player: int) -> int:
 	return WHITE if player == BLACK else BLACK
 
 
+## 把格坐标说成人能看懂的样子，例如 (7, 3) → "H4"。台词和提示都会用到。
+static func cell_name(cell: Vector2i) -> String:
+	return "%s%d" % [String.chr("A".unicode_at(0) + cell.x), cell.y + 1]
+
+
 ## 棋盘上是否已经一个空点都不剩。
 static func is_full(cells: PackedInt32Array) -> bool:
 	return not cells.has(EMPTY)

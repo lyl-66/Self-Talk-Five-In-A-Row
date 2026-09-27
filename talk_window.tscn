@@ -36,3 +36,4 @@ theme_override_font_sizes/normal_font_size = 16
 layout_mode = 2
 theme_override_font_sizes/font_size = 15
 text = "已说 0 句"
+autowrap_mode = 3
