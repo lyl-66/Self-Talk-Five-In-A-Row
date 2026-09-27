@@ -22,7 +22,7 @@ const BUILTIN_PATH: String = "res://topics.txt"
 ## 用户覆盖文件（存在就优先用它）。
 const USER_PATH: String = "user://topics.txt"
 ## 结束语的档位上界（棋子数），和文件里 `=== 结束 N` 的 N 一一对应。
-const ENDING_TIERS: Array[int] = [4, 8, 16, 32, 64, 128, 225]
+const ENDING_TIERS: Array[int] = [10, 16, 24, 32, 64, 128, 256]
 ## 台词里认得的变量名，其余的花括号会当成笔误报出来。
 const KNOWN_VARS: Array[String] = [
 	"move", "cell", "player_move", "my_score", "player_score", "draws", "topic",
@@ -117,6 +117,15 @@ func _bucket(endings: Dictionary, tier: int, key: String) -> Array:
 	return by_key.get("", [])
 
 
+## 把七个档位写成「10/16/24/32/64/128/256」的样子，给提示信息用。
+## 从 ENDING_TIERS 现算，改了档位不用再来改这句话。
+static func tier_list_text() -> String:
+	var parts := PackedStringArray()
+	for tier: int in ENDING_TIERS:
+		parts.append(str(tier))
+	return "/".join(parts)
+
+
 ## 把行上写的胜负标记翻成内部分类名；认不出来返回 "?"。
 func _label_key(label: String) -> String:
 	if label.is_empty():
@@ -188,7 +197,7 @@ func _parse(text: String) -> void:
 					_note_issue(line_number, "认不出的胜负标记「%s」（写 玩家赢 / 玩家输 / 和棋，或者不写）" % label)
 					ending_key = ""
 				if not ENDING_TIERS.has(tier):
-					_note_issue(line_number, "档位 %d 用不到（只能是 4/8/16/32/64/128/225）" % tier)
+					_note_issue(line_number, "档位 %d 用不到（只能是 %s）" % [tier, tier_list_text()])
 				if title.is_empty():
 					_note_issue(line_number, "这段结束语没有话题（前面缺 `### 话题：标题`）")
 				if not endings.has(tier):
