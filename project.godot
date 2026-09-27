@@ -20,6 +20,8 @@ config/icon="res://icon.svg"
 window/size/viewport_width=720
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
+; keep 会在非正方形窗口两侧留出黑边（这个颜色改不了），expand 让内容铺满整窗
+window/stretch/aspect="expand"
 ; 关掉子窗口内嵌，比分窗口才会是真正独立的系统窗口，能单独关掉
 window/subwindows/embed_subwindows=false
 

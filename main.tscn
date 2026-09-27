@@ -30,25 +30,26 @@ offset_bottom = 58.0
 theme_override_font_sizes/font_size = 16
 text = "设置"
 
-[node name="ScoreButton" type="Button" parent="."]
+[node name="ButtonRow" type="HBoxContainer" parent="."]
 offset_left = 100.0
-offset_top = 664.0
-offset_right = 260.0
-offset_bottom = 706.0
-text = "比分窗口"
-
-[node name="RestartButton" type="Button" parent="." unique_id=1886782764]
-offset_left = 280.0
-offset_top = 664.0
-offset_right = 440.0
-offset_bottom = 706.0
-text = "重新开始"
-
-[node name="TalkButton" type="Button" parent="."]
-offset_left = 460.0
 offset_top = 664.0
 offset_right = 620.0
 offset_bottom = 706.0
+theme_override_constants/separation = 20
+
+[node name="ScoreButton" type="Button" parent="ButtonRow"]
+custom_minimum_size = Vector2i(160, 42)
+layout_mode = 2
+text = "比分窗口"
+
+[node name="RestartButton" type="Button" parent="ButtonRow" unique_id=1886782764]
+custom_minimum_size = Vector2i(160, 42)
+layout_mode = 2
+text = "重新开始"
+
+[node name="TalkButton" type="Button" parent="ButtonRow"]
+custom_minimum_size = Vector2i(160, 42)
+layout_mode = 2
 text = "对话窗口"
 
 [node name="ScoreWindow" parent="." instance=ExtResource("3_score")]

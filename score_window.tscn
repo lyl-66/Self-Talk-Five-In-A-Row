@@ -5,11 +5,11 @@
 [node name="ScoreWindow" type="Window"]
 title = "比分"
 initial_position = 0
-size = Vector2i(380, 380)
-min_size = Vector2i(240, 240)
-content_scale_size = Vector2i(380, 380)
+size = Vector2i(380, 400)
+min_size = Vector2i(240, 252)
+content_scale_size = Vector2i(380, 400)
 content_scale_mode = 1
-content_scale_aspect = 1
+content_scale_aspect = 4
 visible = false
 script = ExtResource("1_score")
 
@@ -34,7 +34,7 @@ columns = 2
 [node name="PlayerName" type="Label" parent="Column/Rows"]
 layout_mode = 2
 vertical_alignment = 1
-text = "我（黑棋）"
+text = "玩家（黑棋）"
 
 [node name="PlayerWins" type="Label" parent="Column/Rows"]
 layout_mode = 2
@@ -43,12 +43,12 @@ theme_override_font_sizes/font_size = 30
 text = "0"
 horizontal_alignment = 2
 
-[node name="AiName" type="Label" parent="Column/Rows"]
+[node name="OpponentName" type="Label" parent="Column/Rows"]
 layout_mode = 2
 vertical_alignment = 1
-text = "电脑（白棋）"
+text = "对手（白棋）"
 
-[node name="AiWins" type="Label" parent="Column/Rows"]
+[node name="OpponentWins" type="Label" parent="Column/Rows"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 30

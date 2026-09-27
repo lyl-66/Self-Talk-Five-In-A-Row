@@ -74,6 +74,20 @@ var _opp: int = Gomoku.BLACK
 var use_position_eval: bool = false
 ## 是否启用两层搜索（设置窗口里的第三个开关）；打开时一定要用局面评估。
 var use_search: bool = false
+## 是否启用禁手规则。对调先后手后黑棋可能是电脑自己，那它也得避开禁手点。
+var use_forbidden: bool = false
+
+
+## 黑白对调后黑棋就是电脑自己：开着禁手时把禁手点从候选里去掉，免得自己犯规认输。
+## 万一所有点都是禁手（极少见），就不筛了——总得下一手。
+func _drop_forbidden(cells: PackedInt32Array, candidates: Array[Vector2i]) -> Array[Vector2i]:
+	if not use_forbidden or _me != Gomoku.BLACK:
+		return candidates
+	var legal: Array[Vector2i] = []
+	for cell in candidates:
+		if Gomoku.forbidden_reason(cells, cell.x, cell.y) == "":
+			legal.append(cell)
+	return legal if not legal.is_empty() else candidates
 
 
 ## 指定自己执哪一色，对手自动取另一色。
@@ -88,6 +102,9 @@ func choose_move(cells: PackedInt32Array) -> Vector2i:
 		return Vector2i(Gomoku.SIZE / 2, Gomoku.SIZE / 2)
 
 	var candidates := _collect_candidates(cells)
+	# 黑白对调时黑棋是电脑自己：开着禁手就先把自己不能下的点去掉
+	if use_forbidden and _me == Gomoku.BLACK:
+		candidates = _drop_forbidden(cells, candidates)
 	if candidates.is_empty():
 		return Vector2i(-1, -1)
 

@@ -5,11 +5,11 @@
 [node name="TalkWindow" type="Window"]
 title = "对话"
 initial_position = 0
-size = Vector2i(380, 380)
-min_size = Vector2i(240, 240)
-content_scale_size = Vector2i(380, 380)
+size = Vector2i(380, 400)
+min_size = Vector2i(240, 252)
+content_scale_size = Vector2i(380, 400)
 content_scale_mode = 1
-content_scale_aspect = 1
+content_scale_aspect = 4
 visible = false
 script = ExtResource("1_talk")
 

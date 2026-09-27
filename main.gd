@@ -1,12 +1,13 @@
 extends Node2D
 
-## 五子棋人机对战：玩家执黑先手，电脑执白。
-## 比分跨局累计并长期保存；电脑每落一子会在独立的对话窗口里说一句话；
-## 电脑棋力（局面评估 / 两层搜索）与禁手规则、界面配色都在设置窗口里开关。
+## 五子棋人机对战：默认玩家执黑先手、对手执白；先手可以在设置里对调
+## （玩家改执白后手，对手执黑先下）。
+## 比分跨局累计并长期保存；对手每落一子会在独立的对话窗口里说一句话；
+## 对手的棋力（局面评估 / 两层搜索）与禁手规则、界面配色都在设置窗口里开关。
 
-## 电脑思考时间的下限：开局这种平淡局面就等这么久。
+## 对手思考时间的下限：开局这种平淡局面就等这么久。
 const AI_THINK_DELAY_MIN: float = 0.1
-## 电脑思考时间的上限：局面越紧张越接近它。
+## 对手思考时间的上限：局面越紧张越接近它。
 const AI_THINK_DELAY_MAX: float = 10.0
 ## 在基准时长上叠加的随机抖动，避免同一紧张度下每次等待都一样。
 const AI_THINK_JITTER: float = 0.3
@@ -23,37 +24,41 @@ const FONT_NAMES: Array[String] = [
 ]
 ## 三个小窗口的存档名，摆放与记忆顺序都用它。
 const SMALL_WINDOWS: Array[String] = ["score", "talk", "settings"]
+## 摆棋盘时上下各留出的高度：上面是状态行，下面是按钮行。
+const TOP_BAND: float = 62.0
+const BOTTOM_BAND: float = 56.0
 
 @onready var board: Node2D = $Board
 @onready var status_label: Label = $Status
 @onready var settings_button: Button = $SettingsButton
-@onready var score_button: Button = $ScoreButton
-@onready var restart_button: Button = $RestartButton
-@onready var talk_button: Button = $TalkButton
+@onready var button_row: HBoxContainer = $ButtonRow
+@onready var score_button: Button = $ButtonRow/ScoreButton
+@onready var restart_button: Button = $ButtonRow/RestartButton
+@onready var talk_button: Button = $ButtonRow/TalkButton
 @onready var score_window: Window = $ScoreWindow
 @onready var talk_window: Window = $TalkWindow
 @onready var settings_window: Window = $SettingsWindow
 
-## 玩家执黑，先手。
+## 玩家执哪一色，由设置里的先手开关决定（每局开局时读一次）。
 var human_player: int = Gomoku.BLACK
-## 电脑执白。
+## 对手执另一色。
 var ai_player: int = Gomoku.WHITE
 
 ## 权威棋盘状态，取值见 Gomoku.EMPTY / BLACK / WHITE。
 var cells: PackedInt32Array = PackedInt32Array()
-## 电脑的走子逻辑，每局重新构造。
+## 对手的走子逻辑，每局重新构造。
 var ai: GomokuAI = null
-## 当前该谁落子。
+## 当前该谁落子（黑棋永远先下）。
 var current_player: int = Gomoku.BLACK
 ## 是否已经分出胜负或下满。
 var game_over: bool = false
 
 ## 比分存档，启动时从用户目录读回，每局结束写回。
 var store: ScoreStore = ScoreStore.new()
-## 设置：棋力开关与配色，改动立刻写盘。
+## 设置：先手、棋力开关与配色，改动立刻写盘。
 var settings: GameSettings = GameSettings.new()
 
-## 每次新开局自增；电脑等待结束后用它判断这一手是否已经作废。
+## 每次新开局自增；对手等待结束后用它判断这一手是否已经作废。
 var _game_id: int = 0
 
 
@@ -63,6 +68,7 @@ func _ready() -> void:
 	get_tree().auto_accept_quit = false
 	get_window().min_size = Vector2i(480, 480)
 	get_window().close_requested.connect(_on_main_window_close_requested)
+	get_viewport().size_changed.connect(_layout)
 	settings.load_from_disk()
 	store.load_from_disk()
 	_apply_ui_theme()
@@ -84,8 +90,36 @@ func _ready() -> void:
 	score_button.disabled = score_window.visible
 	talk_button.disabled = talk_window.visible
 	settings_button.disabled = settings_window.visible
+	_layout()
 	_refresh_score()
 	new_game()
+
+
+## 视口尺寸变化时重摆主窗口里的东西。
+## 注意：这些控件挂在 Node2D 下面，**锚点不起作用**（Godot 会按「父级尺寸为 0」算），
+## 所以位置和宽度必须在这里算好，不能靠 anchors_preset。
+func _layout() -> void:
+	var view: Vector2 = get_viewport_rect().size
+	var board_size: float = board.board_size
+
+	# 顶部状态行：铺满整行，文字靠 Label 自己的居中对齐
+	status_label.position = Vector2(20.0, 18.0)
+	status_label.size = Vector2(maxf(200.0, view.x - 40.0), 44.0)
+
+	# 左下角的「设置」按钮位置固定，不用动
+
+	# 棋盘：夹在状态行和按钮行之间居中
+	var usable_top := TOP_BAND
+	var usable_bottom: float = maxf(TOP_BAND + 1.0, view.y - BOTTOM_BAND)
+	board.position = Vector2(
+		(view.x - board_size) / 2.0,
+		usable_top + maxf(0.0, (usable_bottom - usable_top - board_size) / 2.0))
+
+	# 底部按钮行：整行居中贴底
+	var row_size: Vector2 = button_row.get_combined_minimum_size()
+	button_row.size = row_size
+	button_row.position = Vector2((view.x - row_size.x) / 2.0,
+		view.y - BOTTOM_BAND + 6.0)
 
 
 ## 关主窗口时先把窗口布局存下来，再真正退出。
@@ -187,24 +221,36 @@ func _clamp_to_screen(position: Vector2i, size: Vector2i) -> Vector2i:
 			maxi(screen.position.y, screen.position.y + screen.size.y - size.y)))
 
 
-## 重开一局：清空棋盘、换掉电脑实例，并把那一手在途的定时器作废。
-## 比分和对话日志都跨局保留。
+## 重开一局：按设置定下双方的颜色、清空棋盘、换掉对手实例。
+## 玩家执白时由对手先下第一手。比分和对话日志都跨局保留。
 func new_game() -> void:
 	_game_id += 1
+	human_player = Gomoku.BLACK if settings.player_goes_first else Gomoku.WHITE
+	ai_player = Gomoku.opponent(human_player)
 	cells = PackedInt32Array()
 	cells.resize(Gomoku.SIZE * Gomoku.SIZE)
 	ai = GomokuAI.new(ai_player)
 	ai.use_position_eval = settings.use_position_eval
 	ai.use_search = settings.use_search
-	current_player = human_player
+	ai.use_forbidden = settings.use_forbidden
+	current_player = Gomoku.BLACK
 	game_over = false
 	board.hover_player = human_player
 	board.reset()
-	_set_input_enabled(true)
-	_set_status("你执黑先手，点击棋盘落子")
+	score_window.set_sides(human_player == Gomoku.BLACK)
+	_refresh_score()
+
+	if current_player == human_player:
+		_set_input_enabled(true)
+		_set_status("玩家执%s先手，点击棋盘落子" % _color_name(human_player))
+	else:
+		# 黑棋在对手手里，让它先下第一手
+		_set_input_enabled(false)
+		_set_status("玩家执%s后手，对手先下" % _color_name(human_player))
+		_run_ai_turn()
 
 
-## 玩家点棋盘：过滤掉不该接受的点击，落子后交给电脑应手。
+## 玩家点棋盘：过滤掉不该接受的点击，落子后交给对手应手。
 func _on_board_point_clicked(cell: Vector2i) -> void:
 	if game_over or current_player != human_player:
 		return
@@ -258,14 +304,15 @@ func _on_score_clear_requested() -> void:
 	_refresh_score()
 
 
-## 设置里改了东西：立刻写盘、立刻生效（棋力开关影响下一手，配色立刻重绘）。
+## 设置里改了东西：立刻写盘、立刻生效。
+## 先手开关按界面上的说明在下一局生效，其余（棋力、禁手、配色）立刻生效。
 func _on_settings_changed(new_settings: GameSettings) -> void:
 	settings = new_settings
 	settings.save()
 	_apply_settings()
 
 
-## 把设置应用到棋盘配色、窗口背景、文字明暗和电脑的走子参数上。
+## 把设置应用到棋盘配色、窗口背景、文字明暗和对手的走子参数上。
 func _apply_settings() -> void:
 	board.set_colors(settings.board_color, settings.line_color)
 	RenderingServer.set_default_clear_color(settings.background_color)
@@ -274,15 +321,17 @@ func _apply_settings() -> void:
 	if ai != null:
 		ai.use_position_eval = settings.use_position_eval
 		ai.use_search = settings.use_search
+		ai.use_forbidden = settings.use_forbidden
 
 
 ## 把当前比分和最近一局刷到比分窗口上。
 func _refresh_score() -> void:
+	score_window.set_sides(human_player == Gomoku.BLACK)
 	score_window.set_score(store.player_wins, store.ai_wins, store.draw_count,
 		store.games_played, store.last_game())
 
 
-## 电脑的一手：先算出落点（顺便计时），再决定要不要「想一想」，然后落子、说一句话。
+## 对手的一手：先算出落点，再决定要不要「想一想」，然后落子、说一句话。
 func _run_ai_turn() -> void:
 	var token := _game_id
 	_set_input_enabled(false)
@@ -321,8 +370,9 @@ func _play(cell: Vector2i, player: int) -> void:
 	cells[Gomoku.index(cell.x, cell.y)] = player
 	board.place(cell, player)
 
-	# 黑棋开着禁手时，只有「正好五连」才算胜：六连以上交给下面的禁手判罚
-	var strict := settings.use_forbidden and player == human_player
+	# 开着禁手时黑棋只有「正好五连」才算胜：六连以上交给下面的禁手判罚。
+	# 注意禁手是绑黑棋的，不是绑玩家的——先后手可以对调。
+	var strict := settings.use_forbidden and player == Gomoku.BLACK
 	var line := Gomoku.find_win_line(cells, cell.x, cell.y, player, strict)
 	if not line.is_empty():
 		game_over = true
@@ -330,11 +380,11 @@ func _play(cell: Vector2i, player: int) -> void:
 		_set_input_enabled(false)
 		if player == human_player:
 			store.player_wins += 1
-			_set_status("你赢了！")
+			_set_status("玩家赢了！")
 			_record_game("player")
 		else:
 			store.ai_wins += 1
-			_set_status("电脑赢了，再来一局？")
+			_set_status("对手赢了，再来一局？")
 			_record_game("ai")
 		return
 
@@ -349,9 +399,14 @@ func _play(cell: Vector2i, player: int) -> void:
 				offender.append(cell)
 			board.set_win_line(offender)
 			_set_input_enabled(false)
-			store.ai_wins += 1
-			_set_status("禁手：%s · 黑棋判负" % foul)
-			_record_game("ai")
+			if player == human_player:
+				store.ai_wins += 1
+				_set_status("禁手：%s · 玩家判负" % foul)
+				_record_game("ai")
+			else:
+				store.player_wins += 1
+				_set_status("禁手：%s · 对手判负" % foul)
+				_record_game("player")
 			return
 
 	if Gomoku.is_full(cells):
@@ -363,7 +418,10 @@ func _play(cell: Vector2i, player: int) -> void:
 		return
 
 	current_player = Gomoku.opponent(player)
-	_set_status("轮到你（黑棋）" if current_player == human_player else "电脑思考中…")
+	if current_player == human_player:
+		_set_status("轮到玩家（%s）" % _color_name(human_player))
+	else:
+		_set_status("对手思考中…")
 
 
 ## 一局收尾：追加一行明细、写回总分，再刷新窗口。
@@ -380,6 +438,11 @@ func _stone_count() -> int:
 		if value != Gomoku.EMPTY:
 			total += 1
 	return total
+
+
+## 棋子颜色的中文名，拼提示语用。
+func _color_name(player: int) -> String:
+	return "黑棋" if player == Gomoku.BLACK else "白棋"
 
 
 ## 开关棋盘输入。

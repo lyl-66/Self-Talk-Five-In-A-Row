@@ -1,6 +1,6 @@
 extends Window
 
-## 设置窗口：独立小窗口，放电脑棋力的三个开关、三处配色和一个「恢复默认」。
+## 设置窗口：独立小窗口，放先手选择、对手棋力的两个开关、禁手规则和三处配色。
 ## 和另外两个窗口一样：点自己的关闭按钮只是隐藏，主窗口能再打开它。
 ## 任何改动都立刻生效并立刻写盘，所以这里没有「保存」按钮。
 ##
@@ -12,9 +12,10 @@ signal closed
 ## 用户改了开关或颜色时发出，参数是当前完整的设置对象，主窗口据此立刻应用并写盘。
 signal settings_changed(settings: GameSettings)
 
-@onready var position_eval_check: CheckButton = $Column/AI/PositionEval
-@onready var search_check: CheckButton = $Column/AI/TwoPlySearch
-@onready var forbidden_check: CheckButton = $Column/AI/Forbidden
+@onready var player_first_check: CheckButton = $Column/PlayerFirst
+@onready var position_eval_check: CheckButton = $Column/PositionEval
+@onready var search_check: CheckButton = $Column/TwoPlySearch
+@onready var forbidden_check: CheckButton = $Column/Forbidden
 @onready var board_color_picker: ColorPickerButton = $Column/Colors/BoardColor
 @onready var line_color_picker: ColorPickerButton = $Column/Colors/LineColor
 @onready var background_color_picker: ColorPickerButton = $Column/Colors/BackgroundColor
@@ -29,6 +30,7 @@ var _syncing: bool = false
 ## 接好信号。
 func _ready() -> void:
 	close_requested.connect(_on_close_requested)
+	player_first_check.toggled.connect(_on_toggle_changed)
 	position_eval_check.toggled.connect(_on_toggle_changed)
 	search_check.toggled.connect(_on_toggle_changed)
 	forbidden_check.toggled.connect(_on_toggle_changed)
@@ -42,6 +44,7 @@ func _ready() -> void:
 func show_settings(current: GameSettings) -> void:
 	settings = current
 	_syncing = true
+	player_first_check.button_pressed = settings.player_goes_first
 	position_eval_check.button_pressed = settings.use_position_eval
 	search_check.button_pressed = settings.use_search
 	forbidden_check.button_pressed = settings.use_forbidden
@@ -61,6 +64,7 @@ func _on_close_requested() -> void:
 func _on_toggle_changed(_pressed: bool) -> void:
 	if _syncing:
 		return
+	settings.player_goes_first = player_first_check.button_pressed
 	settings.use_position_eval = position_eval_check.button_pressed
 	settings.use_search = search_check.button_pressed
 	settings.use_forbidden = forbidden_check.button_pressed

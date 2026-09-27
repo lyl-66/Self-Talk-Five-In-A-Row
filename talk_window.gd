@@ -1,6 +1,6 @@
 extends Window
 
-## 对话窗口：独立的小窗口，电脑每落一子就在这里说一句话。
+## 对话窗口：独立的小窗口，对手每落一子就在这里说一句话。
 ## 和比分窗口一样，点它自己的关闭按钮只是隐藏，主窗口能再打开它。
 ##
 ## 「一段话分几手说完」的接口：用 queue_passage() 把一整段话排进队列，
@@ -39,7 +39,7 @@ func _ready() -> void:
 	close_requested.connect(_on_close_requested)
 
 
-## 电脑每落一子调用一次：队列里有排好的台词就说，没有就用占位台词顶上。
+## 对手每落一子调用一次：队列里有排好的台词就说，没有就用占位台词顶上。
 func speak_move(move_number: int, cell: Vector2i) -> void:
 	var line: String
 	if _pending.is_empty():
@@ -97,7 +97,7 @@ func _format_cell(cell: Vector2i) -> String:
 func _render() -> void:
 	var parts := PackedStringArray()
 	for line in _lines:
-		parts.append("[color=#8a7a63]电脑[/color]  %s" % line)
+		parts.append("[color=#8a7a63]对手[/color]  %s" % line)
 	log_label.text = "\n".join(parts)
 	_refresh_footer()
 
