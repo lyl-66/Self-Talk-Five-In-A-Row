@@ -14,7 +14,7 @@ position = Vector2(76, 76)
 script = ExtResource("2_board")
 
 [node name="Status" type="Label" parent="." unique_id=1693984677]
-offset_left = 176.0
+offset_left = 20.0
 offset_top = 18.0
 offset_right = 700.0
 offset_bottom = 62.0
