@@ -1,8 +1,10 @@
 class_name GomokuAI
 extends RefCounted
 
-## 启发式五子棋 AI：先处理必胜/必堵的硬性棋型，再用棋型分值挑攻守兼备的点，
-## 最后对候选点做一步推演，避免走出让对手立刻成势的棋。
+## 启发式五子棋 AI，棋力由外面的开关分三档：
+##   1. 默认：五级硬规则 + 棋型分值 + 一步反制惩罚（快，每手十几毫秒）
+##   2. use_position_eval：改用「我走完之后的局面分」来取舍
+##   3. use_search：两层搜索（我一手 → 对手最好的应手 → 局面分），能挡住一手做成的四三
 
 ## 连五的分值，也就是一步定胜负。
 const WIN_SCORE: int = 10_000_000
@@ -25,8 +27,15 @@ const RESPONSE_WEIGHT: float = 1.0
 const REPLY_THRESHOLD: int = FOUR_SCORE
 ## 一步推演最多考察多少个候选点，控制思考耗时。
 const SEARCH_WIDTH: int = 16
+## 两层搜索里对手应手的候选数，比我方少一些，控制叶子数量。
+const REPLY_WIDTH: int = 8
 ## 候选点判定半径：离已有棋子超过这个距离的点不参与计算。
 const NEIGHBOR_RADIUS: int = 2
+
+## 局面评估里，多出来的复合威胁（从第二个活三算起）每个折算多少分。
+const COMPOUND_BONUS: float = 30_000.0
+## 局面评估里对手威胁的权重。
+const EVAL_DEFENSE_WEIGHT: float = 1.0
 
 ## 开局压缩用的棋子数：盘上少于这么多子时，紧张度按比例打折。
 const OPENING_STONES: float = 12.0
@@ -60,6 +69,11 @@ const PATTERNS: Array = [
 
 var _me: int = Gomoku.WHITE
 var _opp: int = Gomoku.BLACK
+
+## 是否启用局面评估（设置窗口里的第二个开关）。
+var use_position_eval: bool = false
+## 是否启用两层搜索（设置窗口里的第三个开关）；打开时一定要用局面评估。
+var use_search: bool = false
 
 
 ## 指定自己执哪一色，对手自动取另一色。
@@ -100,6 +114,11 @@ func choose_move(cells: PackedInt32Array) -> Vector2i:
 			return _pick_best(cells, fours)
 		return _pick_best(cells, opponent_open_fours)
 
+	# 5. 以上都不适用，按开关决定怎么挑点。
+	if use_search:
+		return _search_two_ply(cells, candidates)
+	if use_position_eval:
+		return _pick_best_by_position(cells, candidates)
 	return _pick_best(cells, candidates)
 
 
@@ -129,6 +148,104 @@ func estimate_tension(cells: PackedInt32Array) -> float:
 			best = maxi(best, maxi(_score_at(cells, point, _me), _score_at(cells, point, _opp)))
 	var opening := clampf(float(stones) / OPENING_STONES, OPENING_FLOOR, 1.0)
 	return clampf(_threat_level(best) * opening, 0.0, 1.0)
+
+
+## 局面评估：从 player 的角度给整个盘面打分，分数越高对 player 越有利。
+## 主项是「双方一手能做出的最大棋型」；此外从第二个「能做活三以上的点」算起，
+## 每个再加一份复合威胁分——两个活三远比一个活三可怕，靠主项是体现不出来的。
+func evaluate_position(cells: PackedInt32Array, player: int) -> float:
+	var rival := Gomoku.opponent(player)
+	var my_best := 0
+	var rival_best := 0
+	var my_threats := 0
+	var rival_threats := 0
+	for y: int in Gomoku.SIZE:
+		for x: int in Gomoku.SIZE:
+			if cells[Gomoku.index(x, y)] != Gomoku.EMPTY:
+				continue
+			if not Gomoku.has_neighbor(cells, x, y, NEIGHBOR_RADIUS):
+				continue
+			var point := Vector2i(x, y)
+			var mine := _score_at(cells, point, player)
+			my_best = maxi(my_best, mine)
+			if mine >= OPEN_THREE_SCORE:
+				my_threats += 1
+			var theirs := _score_at(cells, point, rival)
+			rival_best = maxi(rival_best, theirs)
+			if theirs >= OPEN_THREE_SCORE:
+				rival_threats += 1
+	var my_score := float(my_best) + float(maxi(0, my_threats - 1)) * COMPOUND_BONUS
+	var rival_score := float(rival_best) + float(maxi(0, rival_threats - 1)) * COMPOUND_BONUS
+	return my_score - rival_score * EVAL_DEFENSE_WEIGHT
+
+
+## 一层 + 局面评估：只比「我下完之后，这个盘面对我有多好」。
+func _pick_best_by_position(cells: PackedInt32Array, candidates: Array[Vector2i]) -> Vector2i:
+	var board := cells.duplicate()
+	var best: Vector2i = candidates[0]
+	var best_value := -INF
+	for cell in _top_candidates(cells, candidates, SEARCH_WIDTH):
+		var at := Gomoku.index(cell.x, cell.y)
+		board[at] = _me
+		var value := evaluate_position(board, _me)
+		board[at] = Gomoku.EMPTY
+		if value > best_value:
+			best_value = value
+			best = cell
+	return best
+
+
+## 两层搜索：我先走一手，再假设对手挑「让我最差」的一手回应，取最坏情况最好的那手。
+## alpha-beta：某个应手已经差过我目前最好的选择时，这个走法剩下的应手不必再看。
+func _search_two_ply(cells: PackedInt32Array, candidates: Array[Vector2i]) -> Vector2i:
+	var board := cells.duplicate()
+	var best: Vector2i = candidates[0]
+	var best_value := -INF
+	for move in _top_candidates(cells, candidates, SEARCH_WIDTH):
+		var my_at := Gomoku.index(move.x, move.y)
+		board[my_at] = _me
+		var worst := INF
+		for reply in _top_replies(board, REPLY_WIDTH):
+			var reply_at := Gomoku.index(reply.x, reply.y)
+			board[reply_at] = _opp
+			var value := evaluate_position(board, _me)
+			board[reply_at] = Gomoku.EMPTY
+			worst = minf(worst, value)
+			if worst <= best_value:
+				break
+		board[my_at] = Gomoku.EMPTY
+		if worst > best_value:
+			best_value = worst
+			best = move
+	return best
+
+
+## 按静态分排出前 count 个候选点，作为搜索里的走法池。
+func _top_candidates(cells: PackedInt32Array, candidates: Array[Vector2i],
+		count: int) -> Array[Vector2i]:
+	var ranked: Array = []
+	for cell in candidates:
+		ranked.append({"cell": cell, "value": _static_value(cells, cell)})
+	ranked.sort_custom(_by_value_desc)
+	var top: Array[Vector2i] = []
+	for i: int in mini(ranked.size(), count):
+		top.append(ranked[i]["cell"])
+	return top
+
+
+## 站在对手的角度排出它最想下的前 count 手：它的进攻分 + 挡住我的价值。
+## 对手能连五、或必须堵我的四时，这些手的分都很高，自然会排在前面。
+func _top_replies(board: PackedInt32Array, count: int) -> Array[Vector2i]:
+	var ranked: Array = []
+	for cell in _collect_candidates(board):
+		var attack := float(_score_at(board, cell, _opp))
+		var deny := float(_score_at(board, cell, _me))
+		ranked.append({"cell": cell, "value": attack + deny * DEFENSE_WEIGHT})
+	ranked.sort_custom(_by_value_desc)
+	var top: Array[Vector2i] = []
+	for i: int in mini(ranked.size(), count):
+		top.append(ranked[i]["cell"])
+	return top
 
 
 ## 把所有空点里、附近有棋子的那些收集起来作为候选点。

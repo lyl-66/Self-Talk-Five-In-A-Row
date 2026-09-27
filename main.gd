@@ -1,7 +1,8 @@
 extends Node2D
 
-## 五子棋人机对战：玩家执黑先手，电脑执白。比分跨局累计并写进用户目录长期保存，
-## 电脑每落一子还会在独立的对话窗口里说一句话。
+## 五子棋人机对战：玩家执黑先手，电脑执白。
+## 比分跨局累计并长期保存；电脑每落一子会在独立的对话窗口里说一句话；
+## 电脑棋力（局面评估 / 两层搜索）与禁手规则、界面配色都在设置窗口里开关。
 
 ## 电脑思考时间的下限：开局这种平淡局面就等这么久。
 const AI_THINK_DELAY_MIN: float = 0.1
@@ -20,14 +21,18 @@ const AI_THINK_DELAY_BLOCK_MAX: float = 0.9
 const FONT_NAMES: Array[String] = [
 	"Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "SimHei", "sans-serif",
 ]
+## 三个小窗口的存档名，摆放与记忆顺序都用它。
+const SMALL_WINDOWS: Array[String] = ["score", "talk", "settings"]
 
 @onready var board: Node2D = $Board
 @onready var status_label: Label = $Status
+@onready var settings_button: Button = $SettingsButton
 @onready var score_button: Button = $ScoreButton
 @onready var restart_button: Button = $RestartButton
 @onready var talk_button: Button = $TalkButton
 @onready var score_window: Window = $ScoreWindow
 @onready var talk_window: Window = $TalkWindow
+@onready var settings_window: Window = $SettingsWindow
 
 ## 玩家执黑，先手。
 var human_player: int = Gomoku.BLACK
@@ -45,31 +50,40 @@ var game_over: bool = false
 
 ## 比分存档，启动时从用户目录读回，每局结束写回。
 var store: ScoreStore = ScoreStore.new()
+## 设置：棋力开关与配色，改动立刻写盘。
+var settings: GameSettings = GameSettings.new()
 
 ## 每次新开局自增；电脑等待结束后用它判断这一手是否已经作废。
 var _game_id: int = 0
 
 
-## 读回档案与窗口布局、挂字体主题、接好信号，把窗口摆回上次的位置，然后开一局。
+## 读回设置与档案、挂字体主题、接好信号，把窗口摆回上次的位置，然后开一局。
 ## 窗口标题不写在这里，它跟着 project.godot 的 application/config/name 自动取。
 func _ready() -> void:
 	get_tree().auto_accept_quit = false
 	get_window().min_size = Vector2i(480, 480)
 	get_window().close_requested.connect(_on_main_window_close_requested)
+	settings.load_from_disk()
 	store.load_from_disk()
 	_apply_ui_theme()
 	board.point_clicked.connect(_on_board_point_clicked)
 	score_button.pressed.connect(_on_score_button_pressed)
 	restart_button.pressed.connect(new_game)
 	talk_button.pressed.connect(_on_talk_button_pressed)
+	settings_button.pressed.connect(_on_settings_button_pressed)
 	score_window.closed.connect(_on_score_window_closed)
 	talk_window.closed.connect(_on_talk_window_closed)
+	settings_window.closed.connect(_on_settings_window_closed)
 	score_window.clear_requested.connect(_on_score_clear_requested)
+	settings_window.settings_changed.connect(_on_settings_changed)
+	settings_window.show_settings(settings)
+	_apply_settings()
 	# 先把位置和开关状态都定下来再显示，免得先闪一下在屏幕正中。
 	_place_windows()
 	# 窗口开着时对应按钮置灰；关掉就会重新可点。
 	score_button.disabled = score_window.visible
 	talk_button.disabled = talk_window.visible
+	settings_button.disabled = settings_window.visible
 	_refresh_score()
 	new_game()
 
@@ -80,22 +94,38 @@ func _on_main_window_close_requested() -> void:
 	get_tree().quit()
 
 
-## 把三个窗口当前的位置和大小记进布局文件。
+## 把三个小窗口当前的位置、尺寸和开关状态记进布局文件。
 func _save_window_layout() -> void:
-	WindowLayout.save_all({"main": get_window(), "score": score_window, "talk": talk_window})
+	WindowLayout.save_all({
+		"main": get_window(),
+		"score": score_window,
+		"talk": talk_window,
+		"settings": settings_window,
+	})
 
 
 ## 摆窗口：上次记住过就回原位，没记住过就按默认位置摞在主窗口右边。
-## 两个小窗口的开关状态也一起恢复：上次关着的，这次仍然关着。
+## 三个小窗口的开关状态也一起恢复：上次关着的，这次仍然关着。
 func _place_windows() -> void:
 	var layout := WindowLayout.load_all()
 	if layout.has("main"):
 		_restore_window(get_window(), layout["main"])
 	var fallback := _default_side_positions(get_window())
-	_restore_window(score_window, layout.get("score", {}), fallback["score"])
-	_restore_window(talk_window, layout.get("talk", {}), fallback["talk"])
-	_apply_visibility(score_window, layout.get("score", {}))
-	_apply_visibility(talk_window, layout.get("talk", {}))
+	for key: String in SMALL_WINDOWS:
+		var window := _small_window(key)
+		_restore_window(window, layout.get(key, {}), fallback[key])
+		_apply_visibility(window, layout.get(key, {}))
+
+
+## 按存档名取小窗口。
+func _small_window(key: String) -> Window:
+	match key:
+		"score":
+			return score_window
+		"talk":
+			return talk_window
+		_:
+			return settings_window
 
 
 ## 恢复小窗口的开关状态：记录里说关着就关着，没有记录就默认开着。
@@ -104,22 +134,31 @@ func _apply_visibility(window: Window, record: Dictionary) -> void:
 	window.visible = bool(record.get("visible", true))
 
 
-## 默认位置：两个小窗口在主窗口右边竖排，右边放不下就挪到主窗口下面。
+## 默认位置：几个小窗口在主窗口右边竖排，右边放不下就挪到主窗口下面。
 func _default_side_positions(main_window: Window) -> Dictionary:
 	var gap := 12
 	var screen := DisplayServer.screen_get_usable_rect(DisplayServer.window_get_current_screen())
-	var need_width := maxi(score_window.size.x, talk_window.size.x)
-	var need_height := score_window.size.y + gap + talk_window.size.y
+	var need_width := 0
+	var need_height := 0
+	for key: String in SMALL_WINDOWS:
+		var size := _small_window(key).size
+		need_width = maxi(need_width, size.x)
+		need_height += size.y
+	need_height += gap * (SMALL_WINDOWS.size() - 1)
+
 	var origin := Vector2i(main_window.position.x + main_window.size.x + gap,
 		main_window.position.y)
 	if origin.x + need_width > screen.position.x + screen.size.x:
 		origin = Vector2i(main_window.position.x,
 			main_window.position.y + main_window.size.y + gap)
 	origin = _clamp_to_screen(origin, Vector2i(need_width, need_height))
-	return {
-		"score": origin,
-		"talk": Vector2i(origin.x, origin.y + score_window.size.y + gap),
-	}
+
+	var positions := {}
+	var y := origin.y
+	for key: String in SMALL_WINDOWS:
+		positions[key] = Vector2i(origin.x, y)
+		y += _small_window(key).size.y + gap
+	return positions
 
 
 ## 把窗口放回记录中的位置和大小；没有记录就退回默认位置。
@@ -155,6 +194,8 @@ func new_game() -> void:
 	cells = PackedInt32Array()
 	cells.resize(Gomoku.SIZE * Gomoku.SIZE)
 	ai = GomokuAI.new(ai_player)
+	ai.use_position_eval = settings.use_position_eval
+	ai.use_search = settings.use_search
 	current_player = human_player
 	game_over = false
 	board.hover_player = human_player
@@ -189,6 +230,13 @@ func _on_talk_button_pressed() -> void:
 	talk_button.disabled = true
 
 
+## 点「设置」：先把当前设置刷进去，再显示出来。
+func _on_settings_button_pressed() -> void:
+	settings_window.show_settings(settings)
+	settings_window.show()
+	settings_button.disabled = true
+
+
 ## 比分窗口被单独关掉后，把按钮恢复成可点。
 func _on_score_window_closed() -> void:
 	score_button.disabled = false
@@ -199,10 +247,33 @@ func _on_talk_window_closed() -> void:
 	talk_button.disabled = false
 
 
+## 设置窗口被单独关掉后，把按钮恢复成可点。
+func _on_settings_window_closed() -> void:
+	settings_button.disabled = false
+
+
 ## 比分窗口里确认清空比分：存档归零后立刻刷新界面。
 func _on_score_clear_requested() -> void:
 	store.clear()
 	_refresh_score()
+
+
+## 设置里改了东西：立刻写盘、立刻生效（棋力开关影响下一手，配色立刻重绘）。
+func _on_settings_changed(new_settings: GameSettings) -> void:
+	settings = new_settings
+	settings.save()
+	_apply_settings()
+
+
+## 把设置应用到棋盘配色、窗口背景、文字明暗和电脑的走子参数上。
+func _apply_settings() -> void:
+	board.set_colors(settings.board_color, settings.line_color)
+	RenderingServer.set_default_clear_color(settings.background_color)
+	# 背景深浅可能变了，文字颜色要跟着重算
+	_apply_ui_theme()
+	if ai != null:
+		ai.use_position_eval = settings.use_position_eval
+		ai.use_search = settings.use_search
 
 
 ## 把当前比分和最近一局刷到比分窗口上。
@@ -211,11 +282,13 @@ func _refresh_score() -> void:
 		store.games_played, store.last_game())
 
 
-## 电脑的一手：先算出落点，再决定要不要「想一想」，然后落子，落完说一句话。
+## 电脑的一手：先算出落点（顺便计时），再决定要不要「想一想」，然后落子、说一句话。
 func _run_ai_turn() -> void:
 	var token := _game_id
 	_set_input_enabled(false)
+	var started := Time.get_ticks_usec()
 	var move := ai.choose_move(cells)
+	settings_window.set_timing(int((Time.get_ticks_usec() - started) / 1000))
 	if move.x < 0:
 		return
 	var delay := _think_delay(move)
@@ -245,12 +318,14 @@ func _think_delay(move: Vector2i) -> float:
 		AI_THINK_DELAY_MIN, AI_THINK_DELAY_MAX)
 
 
-## 落子并同步到视图，随后判定五连、满盘，记入比分，最后交回合。
+## 落子并同步到视图，随后判定五连 / 禁手 / 满盘，记入比分，最后交回合。
 func _play(cell: Vector2i, player: int) -> void:
 	cells[Gomoku.index(cell.x, cell.y)] = player
 	board.place(cell, player)
 
-	var line := Gomoku.find_win_line(cells, cell.x, cell.y, player)
+	# 黑棋开着禁手时，只有「正好五连」才算胜：六连以上交给下面的禁手判罚
+	var strict := settings.use_forbidden and player == human_player
+	var line := Gomoku.find_win_line(cells, cell.x, cell.y, player, strict)
 	if not line.is_empty():
 		game_over = true
 		board.set_win_line(line)
@@ -264,6 +339,23 @@ func _play(cell: Vector2i, player: int) -> void:
 			_set_status("电脑赢了，再来一局？")
 			_record_game("ai")
 		return
+
+	if strict:
+		var foul := Gomoku.forbidden_reason(cells, cell.x, cell.y)
+		if not foul.is_empty():
+			game_over = true
+			# 复用红圈标记指出犯规处：长连圈整串，三三/四四就圈这一颗
+			var offender: Array[Vector2i] = Gomoku.find_win_line(cells, cell.x, cell.y,
+				player, false)
+			if offender.is_empty():
+				offender.append(cell)
+			board.set_win_line(offender)
+			_set_input_enabled(false)
+			store.ai_wins += 1
+			_set_status("禁手：%s · 黑棋判负" % foul)
+			_record_game("ai")
+			return
+
 	if Gomoku.is_full(cells):
 		game_over = true
 		_set_input_enabled(false)
@@ -303,20 +395,29 @@ func _set_status(text: String) -> void:
 
 
 ## 给界面挂一个走系统中文字体的主题，否则默认字体会把汉字显示成方块。
-## 主窗口、比分窗口、对话窗口各是一套视口，都要挂上；
-## 文字颜色也在这里统一定义，RichTextLabel 的颜色走它自己的 default_color。
+## 文字颜色按窗口背景的明暗自动取反——设置里把背景调成深色时，字也不会看不见。
+## 主窗口和三个小窗口各是一套视口，都要挂上。
 func _apply_ui_theme() -> void:
 	var font := SystemFont.new()
 	font.font_names = PackedStringArray(FONT_NAMES)
 	font.allow_system_fallback = true
+	var text_color := Color(0.23, 0.17, 0.11)
+	if settings.background_color.get_luminance() <= 0.5:
+		text_color = Color(0.91, 0.90, 0.88)
 	var ui_theme := Theme.new()
 	ui_theme.default_font = font
 	ui_theme.default_font_size = 22
-	ui_theme.set_color("font_color", "Label", Color(0.23, 0.17, 0.11))
-	ui_theme.set_color("default_color", "RichTextLabel", Color(0.23, 0.17, 0.11))
+	ui_theme.set_color("font_color", "Label", text_color)
+	ui_theme.set_color("default_color", "RichTextLabel", text_color)
+	# CheckButton 的开关底色是透明的，文字直接压在窗口背景上，必须跟着翻
+	ui_theme.set_color("font_color", "CheckButton", text_color)
+	ui_theme.set_color("font_hover_color", "CheckButton", text_color)
+	ui_theme.set_color("font_pressed_color", "CheckButton", text_color)
 	status_label.theme = ui_theme
+	settings_button.theme = ui_theme
 	score_button.theme = ui_theme
 	restart_button.theme = ui_theme
 	talk_button.theme = ui_theme
 	score_window.theme = ui_theme
 	talk_window.theme = ui_theme
+	settings_window.theme = ui_theme

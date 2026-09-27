@@ -4,6 +4,7 @@
 [ext_resource type="Script" uid="uid://bw7nfplncwldx" path="res://board.gd" id="2_board"]
 [ext_resource type="PackedScene" path="res://score_window.tscn" id="3_score"]
 [ext_resource type="PackedScene" path="res://talk_window.tscn" id="4_talk"]
+[ext_resource type="PackedScene" path="res://settings_window.tscn" id="5_settings"]
 
 [node name="Main" type="Node2D" unique_id=164783819]
 script = ExtResource("1_main")
@@ -13,14 +14,21 @@ position = Vector2(76, 76)
 script = ExtResource("2_board")
 
 [node name="Status" type="Label" parent="." unique_id=1693984677]
-offset_left = 20.0
+offset_left = 176.0
 offset_top = 18.0
 offset_right = 700.0
 offset_bottom = 62.0
-theme_override_colors/font_color = Color(0.23, 0.17, 0.11, 1)
 text = "五子棋"
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="SettingsButton" type="Button" parent="."]
+offset_left = 76.0
+offset_top = 22.0
+offset_right = 164.0
+offset_bottom = 58.0
+theme_override_font_sizes/font_size = 16
+text = "设置"
 
 [node name="ScoreButton" type="Button" parent="."]
 offset_left = 100.0
@@ -46,3 +54,5 @@ text = "对话窗口"
 [node name="ScoreWindow" parent="." instance=ExtResource("3_score")]
 
 [node name="TalkWindow" parent="." instance=ExtResource("4_talk")]
+
+[node name="SettingsWindow" parent="." instance=ExtResource("5_settings")]

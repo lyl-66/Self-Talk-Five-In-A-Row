@@ -1,0 +1,105 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://settings_window.gd" id="1_settings"]
+
+[node name="SettingsWindow" type="Window"]
+title = "设置"
+initial_position = 0
+size = Vector2i(380, 404)
+min_size = Vector2i(360, 380)
+visible = false
+script = ExtResource("1_settings")
+
+[node name="Column" type="VBoxContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 22.0
+offset_top = 18.0
+offset_right = -22.0
+offset_bottom = -18.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="AITitle" type="Label" parent="Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "电脑棋力"
+
+[node name="AI" type="VBoxContainer" parent="Column"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="PositionEval" type="CheckButton" parent="Column/AI"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "局面评估函数"
+
+[node name="TwoPlySearch" type="CheckButton" parent="Column/AI"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "两层搜索（需局面评估）"
+
+[node name="Forbidden" type="CheckButton" parent="Column/AI"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "禁手规则（三三/四四/长连判负）"
+
+[node name="ColorsTitle" type="Label" parent="Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "配色"
+
+[node name="Colors" type="GridContainer" parent="Column"]
+layout_mode = 2
+theme_override_constants/h_separation = 14
+theme_override_constants/v_separation = 6
+columns = 2
+
+[node name="BoardLabel" type="Label" parent="Column/Colors"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "棋盘底色"
+vertical_alignment = 1
+
+[node name="BoardColor" type="ColorPickerButton" parent="Column/Colors"]
+layout_mode = 2
+
+[node name="LineLabel" type="Label" parent="Column/Colors"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "格线颜色"
+vertical_alignment = 1
+
+[node name="LineColor" type="ColorPickerButton" parent="Column/Colors"]
+layout_mode = 2
+
+[node name="BackgroundLabel" type="Label" parent="Column/Colors"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "窗口背景"
+vertical_alignment = 1
+
+[node name="BackgroundColor" type="ColorPickerButton" parent="Column/Colors"]
+layout_mode = 2
+
+[node name="Spacer" type="Control" parent="Column"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Footer" type="HBoxContainer" parent="Column"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Timing" type="Label" parent="Column/Footer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 15
+text = "上一手电脑耗时：—"
+vertical_alignment = 1
+
+[node name="Reset" type="Button" parent="Column/Footer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "恢复默认"

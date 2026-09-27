@@ -14,9 +14,9 @@ const STONE_RADIUS: float = CELL * 0.42
 ## 点击允许的偏移量，超过这个比例就认为没点中交叉点。
 const CLICK_TOLERANCE: float = 0.45
 
-const COLOR_BOARD := Color("e6c891")
-const COLOR_BOARD_EDGE := Color("b08c56")
-const COLOR_LINE := Color("4a3520")
+## 棋盘底色与格线颜色的默认值；运行时可以被设置界面改掉。
+const DEFAULT_COLOR_BOARD := Color("e6c891")
+const DEFAULT_COLOR_LINE := Color("4a3520")
 const COLOR_BLACK_STONE := Color("1b1b1f")
 const COLOR_WHITE_STONE := Color("f7f7f5")
 const COLOR_WHITE_EDGE := Color(0.42, 0.42, 0.45, 0.85)
@@ -29,6 +29,11 @@ const STAR_POINTS: Array[Vector2i] = [
 
 ## 棋盘整体边长（像素），由留白和格数算出来。
 var board_size: float = MARGIN * 2.0 + CELL * float(Gomoku.SIZE - 1)
+
+## 棋盘底色，可由设置界面修改。
+var board_color: Color = DEFAULT_COLOR_BOARD
+## 格线颜色（星位也跟着它变），可由设置界面修改。
+var line_color: Color = DEFAULT_COLOR_LINE
 
 ## 棋盘状态副本，取值见 Gomoku.EMPTY / BLACK / WHITE。
 var cells: PackedInt32Array = PackedInt32Array()
@@ -52,6 +57,13 @@ var _hover: Vector2i = Vector2i(-1, -1)
 ## 初始化时先把棋盘清空，保证 _draw 有数据可画。
 func _ready() -> void:
 	reset()
+
+
+## 换一套棋盘配色；棋盘描边会跟着底色自动取深一点的同色系。
+func set_colors(new_board_color: Color, new_line_color: Color) -> void:
+	board_color = new_board_color
+	line_color = new_line_color
+	queue_redraw()
 
 
 ## 清空棋盘、最后一手和获胜标记，回到开局状态。
@@ -102,18 +114,20 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## 按顺序画出：底板、格线、星位、棋子、悬停预览、最后一手标记、获胜红圈。
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, Vector2(board_size, board_size)), COLOR_BOARD)
-	draw_rect(Rect2(Vector2.ZERO, Vector2(board_size, board_size)), COLOR_BOARD_EDGE, false, 2.0)
+	# 棋盘描边跟着底色取深一点的同色系，换配色时不会突兀
+	var border := board_color.darkened(0.25)
+	draw_rect(Rect2(Vector2.ZERO, Vector2(board_size, board_size)), board_color)
+	draw_rect(Rect2(Vector2.ZERO, Vector2(board_size, board_size)), border, false, 2.0)
 
 	var edge := board_size - MARGIN
 	for i: int in Gomoku.SIZE:
 		var offset := MARGIN + CELL * float(i)
-		draw_line(Vector2(MARGIN, offset), Vector2(edge, offset), COLOR_LINE, 1.0)
-		draw_line(Vector2(offset, MARGIN), Vector2(offset, edge), COLOR_LINE, 1.0)
-	draw_rect(Rect2(MARGIN, MARGIN, edge - MARGIN, edge - MARGIN), COLOR_LINE, false, 2.0)
+		draw_line(Vector2(MARGIN, offset), Vector2(edge, offset), line_color, 1.0)
+		draw_line(Vector2(offset, MARGIN), Vector2(offset, edge), line_color, 1.0)
+	draw_rect(Rect2(MARGIN, MARGIN, edge - MARGIN, edge - MARGIN), line_color, false, 2.0)
 
 	for star in STAR_POINTS:
-		draw_circle(_to_position(star), 3.0, COLOR_LINE)
+		draw_circle(_to_position(star), 3.0, line_color)
 
 	for y: int in Gomoku.SIZE:
 		for x: int in Gomoku.SIZE:
