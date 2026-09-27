@@ -5,8 +5,9 @@ extends RefCounted
 ## 存在 user://windows.cfg（和比分存档同一个目录），写入同样是先落 .tmp 再替换。
 ## 读取一律容错：文件缺失、被改坏、字段类型不对，都当作没有记录，回到默认摆放。
 
-## 存档格式版本。
-const VERSION: int = 1
+## 存档格式版本。改动窗口设计（比如统一尺寸）时把它加一：
+## 版本对不上的旧记录会被忽略一次，窗口回到新的默认摆放，之后重新记录。
+const VERSION: int = 2
 ## 布局文件路径。
 const PATH: String = "user://windows.cfg"
 
@@ -16,6 +17,9 @@ static func load_all() -> Dictionary:
 	var layout := {}
 	var config := ConfigFile.new()
 	if config.load(PATH) != OK:
+		return layout
+	# 版本对不上说明窗口设计改过了，旧的位置和尺寸不要再用
+	if int(config.get_value("meta", "version", 0)) != VERSION:
 		return layout
 	for key: String in config.get_sections():
 		if key == "meta":

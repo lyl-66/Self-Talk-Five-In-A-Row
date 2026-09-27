@@ -286,9 +286,7 @@ func _refresh_score() -> void:
 func _run_ai_turn() -> void:
 	var token := _game_id
 	_set_input_enabled(false)
-	var started := Time.get_ticks_usec()
 	var move := ai.choose_move(cells)
-	settings_window.set_timing(int((Time.get_ticks_usec() - started) / 1000))
 	if move.x < 0:
 		return
 	var delay := _think_delay(move)

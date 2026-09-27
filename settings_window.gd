@@ -3,6 +3,9 @@ extends Window
 ## 设置窗口：独立小窗口，放电脑棋力的三个开关、三处配色和一个「恢复默认」。
 ## 和另外两个窗口一样：点自己的关闭按钮只是隐藏，主窗口能再打开它。
 ## 任何改动都立刻生效并立刻写盘，所以这里没有「保存」按钮。
+##
+## 注意：这里故意不把子窗口内嵌（`gui_embed_subwindows` 保持默认的 false）。
+## 取色器展开后有两百多像素宽、四百像素高，内嵌进这个小窗口会被裁掉，看起来就像点不动。
 
 ## 被单独关掉时发出；主窗口据此把「设置」按钮恢复成可点。
 signal closed
@@ -15,8 +18,7 @@ signal settings_changed(settings: GameSettings)
 @onready var board_color_picker: ColorPickerButton = $Column/Colors/BoardColor
 @onready var line_color_picker: ColorPickerButton = $Column/Colors/LineColor
 @onready var background_color_picker: ColorPickerButton = $Column/Colors/BackgroundColor
-@onready var timing_label: Label = $Column/Footer/Timing
-@onready var reset_button: Button = $Column/Footer/Reset
+@onready var reset_button: Button = $Column/Reset
 
 ## 当前设置对象，由主窗口在打开时传进来。
 var settings: GameSettings = GameSettings.new()
@@ -24,9 +26,8 @@ var settings: GameSettings = GameSettings.new()
 var _syncing: bool = false
 
 
-## 接好信号；颜色选择框内嵌在本窗口里显示，不然会再蹦出一个系统窗口。
+## 接好信号。
 func _ready() -> void:
-	gui_embed_subwindows = true
 	close_requested.connect(_on_close_requested)
 	position_eval_check.toggled.connect(_on_toggle_changed)
 	search_check.toggled.connect(_on_toggle_changed)
@@ -48,14 +49,6 @@ func show_settings(current: GameSettings) -> void:
 	line_color_picker.color = settings.line_color
 	background_color_picker.color = settings.background_color
 	_syncing = false
-
-
-## 显示上一手电脑算了多久；0 表示还没算过。
-func set_timing(milliseconds: int) -> void:
-	if milliseconds <= 0:
-		timing_label.text = "上一手电脑耗时：—"
-	else:
-		timing_label.text = "上一手电脑耗时：%d ms" % milliseconds
 
 
 ## 关闭按钮回调：隐藏窗口并通知主窗口。
