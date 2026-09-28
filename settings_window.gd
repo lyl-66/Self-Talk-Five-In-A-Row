@@ -1,7 +1,7 @@
 extends Window
 
-## 设置窗口：独立小窗口，放先手选择、对手棋力的两个开关、禁手规则和三处配色。
-## 和另外两个窗口一样：点自己的关闭按钮只是隐藏，主窗口能再打开它。
+## 设置窗口：独立小窗口，放先手选择、对手棋力的两个开关、禁手规则和四处配色。
+## 和另外几个窗口一样：点自己的关闭按钮只是隐藏，主窗口能再打开它。
 ## 任何改动都立刻生效并立刻写盘，所以这里没有「保存」按钮。
 ##
 ## 注意：这里故意不把子窗口内嵌（`gui_embed_subwindows` 保持默认的 false）。
@@ -19,6 +19,7 @@ signal settings_changed(settings: GameSettings)
 @onready var board_color_picker: ColorPickerButton = $Column/Colors/BoardColor
 @onready var line_color_picker: ColorPickerButton = $Column/Colors/LineColor
 @onready var background_color_picker: ColorPickerButton = $Column/Colors/BackgroundColor
+@onready var ui_color_picker: ColorPickerButton = $Column/Colors/UIColor
 @onready var reset_button: Button = $Column/Reset
 
 ## 当前设置对象，由主窗口在打开时传进来。
@@ -37,6 +38,7 @@ func _ready() -> void:
 	board_color_picker.color_changed.connect(_on_color_changed)
 	line_color_picker.color_changed.connect(_on_color_changed)
 	background_color_picker.color_changed.connect(_on_color_changed)
+	ui_color_picker.color_changed.connect(_on_color_changed)
 	reset_button.pressed.connect(_on_reset_pressed)
 
 
@@ -51,6 +53,7 @@ func show_settings(current: GameSettings) -> void:
 	board_color_picker.color = settings.board_color
 	line_color_picker.color = settings.line_color
 	background_color_picker.color = settings.background_color
+	ui_color_picker.color = settings.ui_color
 	_syncing = false
 
 
@@ -76,13 +79,14 @@ func _on_toggle_changed(_pressed: bool) -> void:
 	settings_changed.emit(settings)
 
 
-## 颜色变化：三个取色器共用这个回调。
+## 颜色变化：四个取色器共用这个回调。
 func _on_color_changed(_color: Color) -> void:
 	if _syncing:
 		return
 	settings.board_color = board_color_picker.color
 	settings.line_color = line_color_picker.color
 	settings.background_color = background_color_picker.color
+	settings.ui_color = ui_color_picker.color
 	settings_changed.emit(settings)
 
 

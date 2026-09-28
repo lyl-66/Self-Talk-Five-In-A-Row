@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bo8p5tu0cksn"
+path="res://.godot/imported/Arukas Load.mp3-f28099a20d835cff50cc5bd69402cc49.mp3str"
+
+[deps]
+
+source_file="res://music/测试/Arukas Load.mp3"
+dest_files=["res://.godot/imported/Arukas Load.mp3-f28099a20d835cff50cc5bd69402cc49.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

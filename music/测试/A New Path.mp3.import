@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://0ix58u1bftxy"
+path="res://.godot/imported/A New Path.mp3-556ec53808e8f354ee79dc2f3797694d.mp3str"
+
+[deps]
+
+source_file="res://music/测试/A New Path.mp3"
+dest_files=["res://.godot/imported/A New Path.mp3-556ec53808e8f354ee79dc2f3797694d.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

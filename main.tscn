@@ -5,6 +5,7 @@
 [ext_resource type="PackedScene" path="res://score_window.tscn" id="3_score"]
 [ext_resource type="PackedScene" path="res://talk_window.tscn" id="4_talk"]
 [ext_resource type="PackedScene" uid="uid://5kcu8ndjx5gv" path="res://settings_window.tscn" id="5_settings"]
+[ext_resource type="PackedScene" path="res://music_window.tscn" id="6_music"]
 
 [node name="Main" type="Node2D" unique_id=164783819]
 script = ExtResource("1_main")
@@ -29,6 +30,16 @@ offset_right = 164.0
 offset_bottom = 58.0
 theme_override_font_sizes/font_size = 16
 text = "设置"
+
+[node name="MusicButton" type="Button" parent="."]
+offset_left = 556.0
+offset_top = 22.0
+offset_right = 644.0
+offset_bottom = 58.0
+theme_override_font_sizes/font_size = 16
+text = "音乐"
+
+[node name="MusicPlayer" type="AudioStreamPlayer" parent="."]
 
 [node name="ButtonRow" type="HBoxContainer" parent="." unique_id=1198234165]
 offset_left = 100.0
@@ -57,3 +68,5 @@ text = "对话窗口"
 [node name="TalkWindow" parent="." unique_id=2074144161 instance=ExtResource("4_talk")]
 
 [node name="SettingsWindow" parent="." unique_id=1813590437 instance=ExtResource("5_settings")]
+
+[node name="MusicWindow" parent="." instance=ExtResource("6_music")]

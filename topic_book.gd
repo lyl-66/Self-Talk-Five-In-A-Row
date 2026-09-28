@@ -23,6 +23,9 @@ const BUILTIN_PATH: String = "res://topics.txt"
 const USER_PATH: String = "user://topics.txt"
 ## 结束语的档位上界（棋子数），和文件里 `=== 结束 N` 的 N 一一对应。
 const ENDING_TIERS: Array[int] = [10, 16, 24, 32, 64, 128, 256]
+## 「特别话题」有几个位置：玩家第 1～5 次赢之后的下一局，按顺序各说一个。
+## 只写了前几个也没关系，没写的那些届就回到随机。
+const SPECIAL_SLOTS: int = 5
 ## 台词里认得的变量名，其余的花括号会当成笔误报出来。
 const KNOWN_VARS: Array[String] = [
 	"move", "cell", "player_move", "my_score", "player_score", "draws", "topic",
@@ -37,6 +40,9 @@ const ENDING_LABELS: Dictionary = {
 ## 每个话题：{ "title": String, "body": Array,
 ##             "endings": { 档位: { 胜负分类: Array } } }
 var topics: Array = []
+## 特别话题：下标 i 对应「玩家第 i+1 次赢之后的下一局」。
+## 没写的届是空字典（上层会退回随机），所以这里可能有洞，不能只看 size 就当全都有。
+var special_topics: Array = []
 ## 正文说完之后的垫场句池（全话题共用）。
 var filler: Array = []
 ## 读文件时的提示，供界面显示；正常为空。
@@ -50,6 +56,7 @@ var _issues: Array[String] = []
 ## 从磁盘读一份剧本来；每次开新局都会重读，所以改完台词下一局就生效。
 func load_from_disk() -> void:
 	topics.clear()
+	special_topics.clear()
 	filler.clear()
 	last_error = ""
 	_issues.clear()
@@ -59,8 +66,8 @@ func load_from_disk() -> void:
 		last_error = "读不到台词文件：%s" % source_path
 		return
 	_parse(text)
-	if topics.is_empty():
-		last_error = "台词文件里没有找到任何话题（要用 `### 话题：标题` 起头）：%s" % source_path
+	if topics.is_empty() and special_topics.is_empty():
+		last_error = "台词文件里没有找到任何话题（要用 `### 话题：标题` 或 `### 特别话题 1：标题` 起头）：%s" % source_path
 	elif not _issues.is_empty():
 		last_error = _issue_summary()
 
@@ -75,6 +82,19 @@ func topic_at(index: int) -> Dictionary:
 	if topics.is_empty():
 		return {}
 	return topics[abs(index) % topics.size()]
+
+
+## 一共写了几个特别话题的位置（含中间没写的空位）。
+func special_count() -> int:
+	return special_topics.size()
+
+
+## 取「玩家第 win_number 次赢之后」该说的那个特别话题；没写就返回空字典。
+## win_number 从 1 起。
+func special_at(win_number: int) -> Dictionary:
+	if win_number < 1 or win_number > special_topics.size():
+		return {}
+	return special_topics[win_number - 1]
 
 
 ## 按本局结束时的棋子数和胜负挑一档结束语：先在这一档里找「这个结果专用的」，
@@ -162,6 +182,8 @@ func _parse(text: String) -> void:
 	var mode := "filler"
 	var tier := 0
 	var ending_key := ""
+	# 当前这个话题是第几号「特别话题」；0 = 普通话题。
+	var slot := 0
 
 	var lines := text.split("\n")
 	for i: int in lines.size():
@@ -170,13 +192,32 @@ func _parse(text: String) -> void:
 		if line.is_empty() or line.begins_with("//"):
 			continue
 		if line.begins_with("###"):
-			# 新话题：先把上一个存起来
-			_store(title, body, endings)
+			# 新话题：先把上一个存起来（连同它是不是特别话题）
+			_store(title, body, endings, slot)
+			slot = 0
 			title = line.substr(3).strip_edges()
-			if title.begins_with("话题"):
+			if title.begins_with("特别话题"):
+				# `### 特别话题 3：标题` —— 编号写 1～SPECIAL_SLOTS
+				var rest := title.substr(4).strip_edges()
+				var digits := ""
+				for ch: String in rest:
+					var code := ch.unicode_at(0)
+					if code < 48 or code > 57:
+						break
+					digits += ch
+				slot = int(digits) if not digits.is_empty() else 0
+				rest = rest.substr(digits.length()).strip_edges()
+				if rest.begins_with("："):
+					rest = rest.substr(1).strip_edges()
+				title = rest
+				if slot < 1 or slot > SPECIAL_SLOTS:
+					_note_issue(line_number,
+						"特别话题的编号要写 1～%d，这里是「%s」" % [SPECIAL_SLOTS, digits])
+					slot = 0
+			elif title.begins_with("话题"):
 				title = title.substr(2).strip_edges()
-			if title.begins_with("："):
-				title = title.substr(1).strip_edges()
+				if title.begins_with("："):
+					title = title.substr(1).strip_edges()
 			body = []
 			endings = {}
 			mode = "body"
@@ -217,7 +258,7 @@ func _parse(text: String) -> void:
 				endings[tier][ending_key].append(line)
 			_:
 				filler.append(line)
-	_store(title, body, endings)
+	_store(title, body, endings, slot)
 
 
 ## 找出句子里认不出的 {变量}，让作者能当场发现笔误。
@@ -237,8 +278,16 @@ func _check_vars(line_number: int, line: String) -> void:
 		from = close + 1
 
 
-## 把攒好的一个话题放进列表（没标题也没内容就丢掉）。
-func _store(title: String, body: Array, endings: Dictionary) -> void:
+## 把攒好的一个话题放进去（没标题也没内容就丢掉）。
+## slot >= 1 表示它是「第 slot 次赢之后」的特别话题，进 special_topics 的对应格子；
+## 中间没写的格子留成空字典，上层取到空字典会退回随机。
+func _store(title: String, body: Array, endings: Dictionary, slot: int = 0) -> void:
 	if title.is_empty() and body.is_empty() and endings.is_empty():
 		return
-	topics.append({"title": title, "body": body.duplicate(), "endings": endings.duplicate(true)})
+	var topic := {"title": title, "body": body.duplicate(), "endings": endings.duplicate(true)}
+	if slot < 1:
+		topics.append(topic)
+		return
+	while special_topics.size() < slot:
+		special_topics.append({})
+	special_topics[slot - 1] = topic

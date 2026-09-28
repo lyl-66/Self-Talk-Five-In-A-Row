@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bowwvmucpmbxb"
+path="res://.godot/imported/Ambient 9.mp3-26f5d641cd40ca88029acda5853bf276.mp3str"
+
+[deps]
+
+source_file="res://music/测试/Ambient 9.mp3"
+dest_files=["res://.godot/imported/Ambient 9.mp3-26f5d641cd40ca88029acda5853bf276.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

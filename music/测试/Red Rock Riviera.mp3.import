@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bkmqd2p0napge"
+path="res://.godot/imported/Red Rock Riviera.mp3-68dbbd7cb0ae61965cba7f438ac34bc7.mp3str"
+
+[deps]
+
+source_file="res://music/测试/Red Rock Riviera.mp3"
+dest_files=["res://.godot/imported/Red Rock Riviera.mp3-68dbbd7cb0ae61965cba7f438ac34bc7.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

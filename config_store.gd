@@ -50,3 +50,24 @@ static func pick_int(config: ConfigFile, section: String, key: String, fallback:
 static func pick_color(config: ConfigFile, section: String, key: String, fallback: Color) -> Color:
 	var value: Variant = config.get_value(section, key, fallback)
 	return value if value is Color else fallback
+
+
+## 读一个整数数组项（比如话题洗牌袋）；缺失或类型不对就返回 fallback。
+## 数组里混进来的非整数元素直接丢掉，不整份作废。
+##
+## 默认值给的是空数组而不是 null：ConfigFile.get_value 传 null 会被当成
+## 「没给默认值」，读不到时直接报错（window_layout.gd 里也踩过同一个坑）。
+static func pick_int_array(config: ConfigFile, section: String, key: String,
+		fallback: Array[int]) -> Array[int]:
+	var value: Variant = config.get_value(section, key, [])
+	if not (value is Array):
+		return fallback
+	var out: Array[int] = []
+	for item: Variant in value:
+		if item is int:
+			out.append(item)
+		elif item is float:
+			out.append(int(item))
+	if out.is_empty():
+		return fallback
+	return out

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bur3b6mqfs8db"
+path="res://.godot/imported/Under A Canopy_音频.mp3-09b97c42b8d687c9b11a495e97be2365.mp3str"
+
+[deps]
+
+source_file="res://music/测试/Under A Canopy_音频.mp3"
+dest_files=["res://.godot/imported/Under A Canopy_音频.mp3-09b97c42b8d687c9b11a495e97be2365.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

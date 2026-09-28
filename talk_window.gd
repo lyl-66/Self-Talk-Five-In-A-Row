@@ -90,18 +90,6 @@ func end_topic(final_stones: int, result: String, context: Dictionary = {}) -> v
 	_append(_fill_vars(str(candidates[randi() % candidates.size()]), context))
 
 
-## 正文里还剩几句没说。
-func pending_count() -> int:
-	return _body.size()
-
-
-## 清空日志（不影响当前话题的进度）。
-func clear_log() -> void:
-	_lines.clear()
-	_spoken_count = 0
-	_render()
-
-
 ## 关闭按钮回调：隐藏窗口并通知主窗口。
 func _on_close_requested() -> void:
 	hide()

@@ -83,6 +83,17 @@ custom_minimum_size = Vector2(150, 30)
 layout_mode = 2
 size_flags_horizontal = 3
 
+[node name="UILabel" type="Label" parent="Column/Colors"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 17
+text = "界面控件"
+vertical_alignment = 1
+
+[node name="UIColor" type="ColorPickerButton" parent="Column/Colors"]
+custom_minimum_size = Vector2(150, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+
 [node name="Spacer" type="Control" parent="Column" unique_id=656376268]
 layout_mode = 2
 size_flags_vertical = 3

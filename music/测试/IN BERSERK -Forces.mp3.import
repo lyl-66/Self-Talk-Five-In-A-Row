@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://4doogoyjsui0"
+path="res://.godot/imported/IN BERSERK -Forces.mp3-808b9eb16dddca181c81e6b10b41bde6.mp3str"
+
+[deps]
+
+source_file="res://music/测试/IN BERSERK -Forces.mp3"
+dest_files=["res://.godot/imported/IN BERSERK -Forces.mp3-808b9eb16dddca181c81e6b10b41bde6.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4
