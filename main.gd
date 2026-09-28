@@ -51,6 +51,10 @@ const SFX_LEAD_IN_MS: float = 80.0
 ## 也就是赢 1 把开对话、2 把开音乐、3 把开设置、4 把开比分。
 const UNLOCK_ORDER: Array[String] = ["talk", "music", "settings", "score"]
 
+## Shift+5「完全归档」要搬走的存档名单（都在 user:// 下）。
+## 只搬认得出名字的这几份；logs/、着色器缓存那些目录一概不动。
+const SAVE_FILES: Array[String] = ["settings.cfg", "score.cfg", "windows.cfg", "history.jsonl"]
+
 @onready var board: Node2D = $Board
 @onready var status_label: Label = $Status
 @onready var settings_button: Button = $SettingsButton
@@ -269,9 +273,9 @@ func _apply_window_button(button: Button, key: String, window_open: bool) -> voi
 	button.disabled = not unlocked or window_open
 
 
-## 两个隐藏组合键都在这儿处理：
-##   Shift+5  应急通道：一次性把所有窗口开出来，并且写盘记住
-##   Shift+6  彩蛋：落子音效在干声 / 混响之间切换
+## 两个隐藏组合键都在这儿处理，都是**按一下切过去、再按一下切回来**：
+##   Shift+5  解锁全部 ←→ 完全归档（回到"从没玩过一把"）
+##   Shift+6  落子音效加混响 ←→ 恢复干声
 ##
 ## 判断用的是**物理键位**而不是 keycode：这些组合打出来正好是 % ^ 这些符号，
 ## 而符号在不同键盘布局上按的键不一样，按物理位置才稳。
@@ -283,9 +287,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	match key.physical_keycode:
 		KEY_5:
-			_unlock_everything()
+			_toggle_unlock_or_archive()
 		KEY_6:
 			_toggle_reverb_easter_egg()
+
+
+## Shift+5：还没全开就全开，已经全开了就归档。
+##
+## 靠「现在是不是全开着」分辨该做哪件事，而不是另记一个开关——归档会把
+## unlock_all 清掉，所以按键的语义和屏幕上看到的状态永远对得上。
+## （赢棋自然全开时 unlock_all 还是 false，那就先按一次全开、再按一次归档。）
+func _toggle_unlock_or_archive() -> void:
+	if settings.unlock_all:
+		_archive_everything()
+	else:
+		_unlock_everything()
 
 
 func _unlock_everything() -> void:
@@ -294,6 +310,53 @@ func _unlock_everything() -> void:
 		settings.save()
 	_refresh_unlocks()
 	_set_status("已解锁全部窗口")
+
+
+## 完全归档：把存档搬进 user://archive-<时间戳>/，游戏回到"从没玩过一把"。
+##
+## **是搬走，不是删除**——几份存档原样躺在那个目录里，想反悔手动挪回来就行。
+## 搬完再把内存里的状态按"没有存档"重建一遍，顺序照抄 _ready()：
+## 设置和比分重新读盘（文件没了 → 全默认），窗口回默认位置，
+## 没解锁的窗口重新收起来，棋盘开新局。
+func _archive_everything() -> void:
+	var stamp := Time.get_datetime_string_from_system().replace(":", "-")
+	var dir_path := "user://archive-%s" % stamp
+	if DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir_path)) != OK:
+		_set_status("归档失败：建不了 %s" % dir_path)
+		return
+
+	var moved := 0
+	for file_name: String in _archivable_files():
+		var from := ProjectSettings.globalize_path("user://%s" % file_name)
+		var to := ProjectSettings.globalize_path("%s/%s" % [dir_path, file_name])
+		if DirAccess.rename_absolute(from, to) == OK:
+			moved += 1
+
+	settings.load_from_disk()
+	store.load_from_disk()
+	_apply_settings()
+	_place_windows()
+	_refresh_unlocks()
+	_layout()
+	_refresh_score()
+	new_game()
+	_set_status("已完全归档 %d 份，从头开始（%s）" % [moved, dir_path])
+
+
+## 归档要搬哪些文件：SAVE_FILES 那四份，加上历代「清空比分」留下的旧明细
+## （它们平时躺在 user:// 根目录，不一起搬走就不算真的干净）。
+func _archivable_files() -> Array[String]:
+	var names: Array[String] = []
+	for file_name: String in SAVE_FILES:
+		if FileAccess.file_exists("user://%s" % file_name):
+			names.append(file_name)
+	var dir := DirAccess.open("user://")
+	if dir == null:
+		return names
+	for file_name: String in dir.get_files():
+		if file_name.begins_with("history-") and file_name.ends_with(".jsonl"):
+			names.append(file_name)
+	return names
 
 
 ## 默认位置：几个小窗口在主窗口右边竖排，右边放不下就挪到主窗口下面。

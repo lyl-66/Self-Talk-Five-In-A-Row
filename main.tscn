@@ -31,7 +31,7 @@ offset_bottom = 58.0
 theme_override_font_sizes/font_size = 16
 text = "设置"
 
-[node name="MusicButton" type="Button" parent="."]
+[node name="MusicButton" type="Button" parent="." unique_id=1005899890]
 offset_left = 556.0
 offset_top = 22.0
 offset_right = 644.0
@@ -39,7 +39,7 @@ offset_bottom = 58.0
 theme_override_font_sizes/font_size = 16
 text = "音乐"
 
-[node name="MusicPlayer" type="AudioStreamPlayer" parent="."]
+[node name="MusicPlayer" type="AudioStreamPlayer" parent="." unique_id=208739845]
 
 [node name="ButtonRow" type="HBoxContainer" parent="." unique_id=1198234165]
 offset_left = 100.0
@@ -69,4 +69,4 @@ text = "对话窗口"
 
 [node name="SettingsWindow" parent="." unique_id=1813590437 instance=ExtResource("5_settings")]
 
-[node name="MusicWindow" parent="." instance=ExtResource("6_music")]
+[node name="MusicWindow" parent="." unique_id=1872632737 instance=ExtResource("6_music")]
