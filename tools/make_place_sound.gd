@@ -1,7 +1,6 @@
 extends SceneTree
 
 ## 一次性工具：把 sound/落子音效.mp3 加工成一个「有身体」的落子声。
-## 跑出来的 sound/落子音效.wav 就是游戏现在用的那版。
 ##   "C:/Godot_v4.7.2-stable_win64_console.exe" --path "C:/godot/ai-tset" --script res://tools/make_place_sound.gd
 ## 跑完记得让编辑器重新导入（或者在项目目录跑一次 --headless --import），
 ## 否则新的 wav 没有 .import，游戏里 load() 认不出来。
