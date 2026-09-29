@@ -12,6 +12,11 @@ extends RefCounted
 ##   === 结束 32 玩家输           同上，但玩家输了
 ##   === 结束 32                  不写胜负标记就是两种结果都能用的兜底句
 ##
+## 结束语分两层，**写在哪儿决定归谁**：
+##   写在某个 `### 话题` 之后 —— 归这个话题，只有说到它时才用得到；
+##   写在所有 `### 话题` 之前 —— 进「通用池」，任何话题都轮得到。
+## 挑的时候先看话题自己那份，它没有这一档就落到通用池；两边都没有就不说告别语。
+##
 ## 解析一律容错：空行和 `//` 注释忽略，缺哪一档结束语就退到写得有的一档，
 ## 整份文件读不出来时 topics 为空，上层会回落到占位台词。
 ## 解析中发现的问题（认不出的标记、用不到的档位、写错的变量名）会攒进 last_error，
@@ -45,6 +50,9 @@ var topics: Array = []
 var special_topics: Array = []
 ## 正文说完之后的垫场句池（全话题共用）。
 var filler: Array = []
+## 通用结束语池：写在所有话题之前的那份 `=== 结束 ...`，任何话题都能轮到。
+## 结构和话题自己那份一样：{ 档位: { 胜负分类: Array } }。
+var common_endings: Dictionary = {}
 ## 读文件时的提示，供界面显示；正常为空。
 var last_error: String = ""
 ## 实际用的是哪个文件。
@@ -58,6 +66,7 @@ func load_from_disk() -> void:
 	topics.clear()
 	special_topics.clear()
 	filler.clear()
+	common_endings.clear()
 	last_error = ""
 	_issues.clear()
 	source_path = USER_PATH if FileAccess.file_exists(USER_PATH) else BUILTIN_PATH
@@ -100,16 +109,28 @@ func special_at(win_number: int) -> Dictionary:
 ## 按本局结束时的棋子数和胜负挑一档结束语：先在这一档里找「这个结果专用的」，
 ## 再找不带标记的兜底句；整档都没有就往更大的档找，都没有就返回空。
 ## result 取 main.gd 记分用的那几个值："player"（玩家赢）/ "ai"（对手赢）/ "draw"。
+##
+## **话题自己那份先算**，它交白卷才落到通用池。所以想给某个话题单独写收尾，
+## 就把 `=== 结束` 写在它后面；不写就用文件开头那份通用的。
 func ending_lines(topic: Dictionary, final_stones: int, result: String = "") -> Array:
-	var endings: Dictionary = topic.get("endings", {})
 	var key := outcome_key(result)
+	var own: Dictionary = topic.get("endings", {})
+	var lines := _pick_ending(own, final_stones, key)
+	if lines.is_empty():
+		lines = _pick_ending(common_endings, final_stones, key)
+	return lines
+
+
+## 从一个结束语池里挑一档：先按棋子数找「这一档及以内最紧的那个」，
+## 都没写就退到任意有内容的一档（宁可说个不贴切的，也别不说）。
+func _pick_ending(pool: Dictionary, final_stones: int, key: String) -> Array:
 	for tier: int in ENDING_TIERS:
 		if final_stones <= tier:
-			var lines := _bucket(endings, tier, key)
+			var lines := _bucket(pool, tier, key)
 			if not lines.is_empty():
 				return lines
 	for tier: int in ENDING_TIERS:
-		var lines := _bucket(endings, tier, key)
+		var lines := _bucket(pool, tier, key)
 		if not lines.is_empty():
 			return lines
 	return []
@@ -178,7 +199,9 @@ func _note_issue(line_number: int, message: String) -> void:
 func _parse(text: String) -> void:
 	var title := ""
 	var body: Array = []
-	var endings: Dictionary = {}
+	# 一开始指向通用池：文件开头那些 `=== 结束` 就写进它。
+	# 遇到 `###` 时换成这个话题自己的空池，于是「写在话题之前 = 通用」自动成立。
+	var endings: Dictionary = common_endings
 	var mode := "filler"
 	var tier := 0
 	var ending_key := ""
@@ -239,8 +262,6 @@ func _parse(text: String) -> void:
 					ending_key = ""
 				if not ENDING_TIERS.has(tier):
 					_note_issue(line_number, "档位 %d 用不到（只能是 %s）" % [tier, tier_list_text()])
-				if title.is_empty():
-					_note_issue(line_number, "这段结束语没有话题（前面缺 `### 话题：标题`）")
 				if not endings.has(tier):
 					endings[tier] = {}
 				var by_key: Dictionary = endings[tier]
@@ -278,11 +299,13 @@ func _check_vars(line_number: int, line: String) -> void:
 		from = close + 1
 
 
-## 把攒好的一个话题放进去（没标题也没内容就丢掉）。
+## 把攒好的一个话题放进去。没有标题的直接丢掉——话题必须由 `### 话题：` 或
+## `### 特别话题 N：` 起头；文件开头那些没挂话题的 `=== 结束` 是写进通用池的，
+## 不能顺手被这里收成一个空标题的话题。
 ## slot >= 1 表示它是「第 slot 次赢之后」的特别话题，进 special_topics 的对应格子；
 ## 中间没写的格子留成空字典，上层取到空字典会退回随机。
 func _store(title: String, body: Array, endings: Dictionary, slot: int = 0) -> void:
-	if title.is_empty() and body.is_empty() and endings.is_empty():
+	if title.is_empty():
 		return
 	var topic := {"title": title, "body": body.duplicate(), "endings": endings.duplicate(true)}
 	if slot < 1:
