@@ -2,15 +2,13 @@ extends Window
 
 ## 音乐播放器窗口：曲名、播放条、暂停/播放、下一首、歌单。
 ##
-## 歌单有**两个来源**，合并成一个歌单列着：
-##   · 玩家的 —— user://music/。**打包成 exe 之后这里依然能写**，是玩家加歌的地方；
-##     窗口上那个「打开文件夹」按钮直接跳过去。
-##   · 出厂的 —— 工程的 res://music/，跟着游戏一起打包的那批。
-## 两边**同名的文件夹会并成一行**，里面玩家的歌排在出厂的歌前面；只在一边有的
-## 文件夹就单独占一行。歌单**每次窗口打开时重新扫一遍**，所以往任一来源的子文件夹里
-## 丢一首歌，下次开窗口它就在列表里——不用改代码，也不用重启。
+## 歌单**只有一个来源**：打包之后就是 exe 旁边那个 music/ ——游戏文件夹自包含，
+## 想加歌删歌直接在那儿动手，不碰 AppData、也不依赖本地装了什么；从编辑器直接跑时
+## 没有"exe 旁边"这回事，就用工程里的 res://music/。窗口上那个「打开文件夹」按钮
+## 跳到的就是这份音乐根目录。
 ##
-## 出厂的歌在歌单里**压得更淡**，玩家自己放的和文件夹名一样亮，一眼看得出哪些是后加的。
+## 歌单**每次窗口打开时重新扫一遍**，所以往音乐根目录或它某个子文件夹里丢一首歌，
+## 下次开窗口它就在列表里——不用改代码，也不用重启。
 ##
 ## 歌单按文件夹分组：每个子文件夹一行（后面写着有几首），点一下展开或收起，
 ## 展开后才看得到里面的歌。空文件夹也列出来，展开写着「还没有歌」。
@@ -21,14 +19,24 @@ extends Window
 ## 被单独关掉时发出；主窗口据此把「音乐」按钮恢复成可点。
 signal closed
 
-## 出厂音乐的根目录，跟着游戏一起打包。子文件夹会被递归扫描。
+## 从编辑器直接跑时用的音乐根目录：工程的 res://music/。子文件夹会被递归扫描；
+## 打包之后改扫 exe 旁边那个 music/，见 _music_root()。
 const MUSIC_DIR: String = "res://music"
-## 玩家自己的音乐目录，落在存档目录下。**导出成 exe 以后这里照样能写**，
-## 而 res:// 在包里是只读的——所以玩家要加歌只能加在这儿。
-const USER_MUSIC_DIR: String = "user://music"
-## 两处来源的标记。歌单里是合并显示的，靠这个决定文字深浅和悬停说明。
-const SOURCE_USER: String = "user"
-const SOURCE_BUILTIN: String = "builtin"
+
+
+## 音乐根目录。**打包之后就是 exe 旁边那个 music/** ——整个游戏文件夹自包含，
+## 想加歌删歌直接在那儿动手，不碰 AppData、也不依赖本地装了什么。
+##
+## 怎么分辨"打包了没有"：**看工程里那份 res://music/ 在不在**。
+## 别用 `OS.has_feature("editor")`——这个项目是用「编辑器本体 + .pck」的方式跑的，
+## 那个二进制会老老实实报告"我是编辑器"，结果打包版也被判成编辑器、跑去开 res://。
+## 而打包时 music/ 被 exclude 掉了，`res://music/` 压根不存在，用这个判断反而准。
+func _music_root() -> String:
+	if DirAccess.open(MUSIC_DIR) != null:
+		return MUSIC_DIR
+	return OS.get_executable_path().get_base_dir().path_join("music")
+
+
 ## 运行时能加载的音频格式。**Godot 4 只有这三种**——它没有 flac / opus / aac 的解码器，
 ## 这不是本项目的取舍，是引擎的硬限制：AudioStreamFLAC 之类的类在 ClassDB 里根本不存在。
 const EXTENSIONS: Array[String] = ["mp3", "ogg", "wav"]
@@ -42,9 +50,6 @@ const EMPTY_HINT: String = "没有找到歌曲：点下面的「打开文件夹�
 ## 窗口开着的时候，隔多久看一眼音乐目录有没有变化（秒）。
 ## 太密是白扫，太疏玩家会觉得"放了歌半天不出现"——两秒是个不打扰的间隔。
 const RESCAN_INTERVAL: float = 2.0
-## 出厂音乐搬进玩家目录之后留的记号，用来记住"搬过了"。
-## 名字以点开头，扫歌单时会直接跳过。
-const SEED_FLAG: String = ".seeded"
 
 @onready var now_playing: Label = $Column/NowPlaying
 @onready var progress: HSlider = $Column/Bar/Progress
@@ -63,12 +68,11 @@ var player: AudioStreamPlayer = null
 var sfx_players: Array[AudioStreamPlayer] = []
 
 ## 播放顺序摊平之后的一份：顶层散歌在前，再按文件夹顺序接上各自的歌。
-## 每项 { path, title, where, source }。_index 是它里面的下标，「下一首」也跟着它走。
+## 每项 { path, title, where }。_index 是它里面的下标，「下一首」也跟着它走。
 var _tracks: Array[Dictionary] = []
-## 歌单树的文件夹，每项 { name, tracks }。两处来源同名的会并成一条；
-## 空文件夹也在里面（tracks 为空）。
+## 歌单树的文件夹，每项 { name, tracks }。空文件夹也在里面（tracks 为空）。
 var _folders: Array[Dictionary] = []
-## 直接放在任一根目录下、没进子文件夹的歌。玩家的排在前面。
+## 直接放在音乐根目录下、没进子文件夹的歌。
 var _root_tracks: Array[Dictionary] = []
 ## 这次扫描里遇到几个「认得出是音频、但 Godot 解不了」的文件。歌单里拿它提醒玩家——
 ## 往文件夹里放了歌却听不到，多半就是这个原因。
@@ -83,7 +87,7 @@ var _item_by_path: Dictionary = {}
 var _rebuilding: bool = false
 ## 当前选中第几首；-1 表示还没选。
 var _index: int = -1
-## 当前这首歌的 res:// 路径。重扫歌单后靠它把正在放的那首找回来。
+## 当前这首歌在歌单里的路径。重扫歌单后靠它把正在放的那首找回来。
 var _current_path: String = ""
 ## 正在拖播放条：拖动过程中不 seek，松手才定位，免得一卡一卡。
 var _dragging: bool = false
@@ -108,88 +112,31 @@ func _ready() -> void:
 	volume_bar.value = _volume
 	sfx_bar.value_changed.connect(_on_sfx_volume_changed)
 	sfx_bar.value = _sfx_volume
-	_ensure_user_dir()
-	_seed_user_music()
+	_ensure_music_root()
 	reload_playlist()
 
 
-## 把玩家的音乐目录建出来，**空着的话再照着出厂那边的分类铺一遍空文件夹**——
-## 那个目录藏在 AppData 深处，玩家点「打开文件夹」过去总得看到点东西，
-## 空荡荡一片会不知道该往哪儿放。
-##
-## 判据是**目录空不空**而不是"第一次建"：玩家自己往里放过了就不动他；
-## 但空目录（头一次跑、或者被清空过）就该给他个起点。
-func _ensure_user_dir() -> void:
-	var root := ProjectSettings.globalize_path(USER_MUSIC_DIR)
-	DirAccess.make_dir_recursive_absolute(root)
-	var here := DirAccess.open(USER_MUSIC_DIR)
-	if here == null or not here.get_files().is_empty() or not here.get_directories().is_empty():
-		return
-	var builtin := DirAccess.open(MUSIC_DIR)
-	if builtin == null:
-		return
-	builtin.list_dir_begin()
-	var entry := builtin.get_next()
-	while entry != "":
-		if not entry.begins_with(".") and builtin.current_is_dir():
-			DirAccess.make_dir_recursive_absolute(root.path_join(entry))
-		entry = builtin.get_next()
-	builtin.list_dir_end()
+## 音乐根目录的绝对路径。打包后 `_music_root()` 已经是绝对路径，原样返回；
+## 编辑器里跑时是 `res://music`，得转一下才能交给 DirAccess / OS 那些接口。
+func _music_root_absolute() -> String:
+	var root := _music_root()
+	return root if root.is_absolute_path() else ProjectSettings.globalize_path(root)
 
 
-## 头一次跑的时候，把出厂的曲子**原样复制一份**到玩家的音乐目录里——这样他打开
-## 文件夹能看到货真价实的 mp3，想删想改名都随他。歌单那边两处本来就是合并的，
-## 复制过去仍是同一行，不会变成两份。
-##
-## 只做一次（凭 .seeded 那个记号）：玩家删掉的、改过名的都算数，不该每次启动又塞回来。
-## 已经存在的文件一律不覆盖——那是玩家自己的。
-func _seed_user_music() -> void:
-	if FileAccess.file_exists(USER_MUSIC_DIR.path_join(SEED_FLAG)):
-		return
-	var found := _scan_root(SOURCE_BUILTIN, MUSIC_DIR)
-	var copied := 0
-	for track: Dictionary in found["root_tracks"]:
-		copied += _copy_out(str(track["path"]))
-	for folder: Dictionary in found["folders"]:
-		for track: Dictionary in folder["tracks"]:
-			copied += _copy_out(str(track["path"]))
-	var mark := FileAccess.open(USER_MUSIC_DIR.path_join(SEED_FLAG), FileAccess.WRITE)
-	if mark != null:
-		mark.store_line("出厂音乐复制过 %d 首；删掉这个文件就会再复制一次" % copied)
-		mark.close()
+## 保证音乐根目录存在。打包版头一次打开时 exe 旁边还没有 music/，
+## 给它建出来玩家才知道该往哪儿放歌；从编辑器跑时工程里那份本来就在。
+func _ensure_music_root() -> void:
+	DirAccess.make_dir_recursive_absolute(_music_root_absolute())
 
 
-## 把一首出厂曲子写成普通文件放进玩家的音乐目录，保持它在出厂那边的相对路径。
-## 返回 1 表示真写了，0 表示跳过（格式不合适、或者玩家那儿已经有同名的了）。
-##
-## **字节从 AudioStreamMP3.data 拿**，不是把音频重新编码一遍：打包之后 res:// 里那个
-## mp3 已经被导成 .mp3str，直接 FileAccess 读原文件根本读不到；而 .data 里装的就是
-## 原始 mp3 数据（实测长度和磁盘上的源文件一字节不差、开头是 "ID3"），所以复制出来的
-## 是能直接播放、别的播放器也认的普通 mp3。
-func _copy_out(res_path: String) -> int:
-	var stream := load(res_path)
-	if not (stream is AudioStreamMP3):
-		return 0
-	var relative := res_path.trim_prefix(MUSIC_DIR + "/")
-	var absolute := ProjectSettings.globalize_path(USER_MUSIC_DIR.path_join(relative))
-	if FileAccess.file_exists(absolute):
-		return 0
-	DirAccess.make_dir_recursive_absolute(absolute.get_base_dir())
-	var file := FileAccess.open(absolute, FileAccess.WRITE)
-	if file == null:
-		return 0
-	file.store_buffer((stream as AudioStreamMP3).data)
-	file.close()
-	return 1
-
-
-## 点「打开文件夹」：用系统自带的文件管理器打开玩家的音乐目录。
-## 路径藏在 AppData 深处，指望玩家自己找到是不现实的，所以给个按钮。
+## 点「打开文件夹」：用系统自带的文件管理器打开音乐目录。
+## 打包之后它就是 exe 旁边那个 music/，玩家往那儿丢歌、删歌都行。
 func _on_open_folder_pressed() -> void:
-	_ensure_user_dir()
-	var err := OS.shell_open(ProjectSettings.globalize_path(USER_MUSIC_DIR))
+	_ensure_music_root()
+	var absolute := _music_root_absolute()
+	var err := OS.shell_open(absolute)
 	if err != OK:
-		_error = "打不开文件夹：%s" % USER_MUSIC_DIR
+		_error = "打不开文件夹：%s" % absolute
 		_refresh_now_playing()
 
 
@@ -228,46 +175,21 @@ func reload_playlist() -> void:
 	_refresh_button()
 
 
-## 扫两个来源，合并成一个歌单：玩家的排在前面、出厂的跟在后面。
-## **同名文件夹并成一行**，里面玩家的歌在前、出厂的在后；只在一边有的单独占一行。
-## 目录不存在的来源直接跳过（玩家的那份 _ensure_user_dir 会建出来）。
+## 扫音乐根目录：顶层散落的歌进 _root_tracks，每个子文件夹收成 _folders 里的一条
+## （**空文件夹也收**，歌单里要列出来）。最后摊平成 _tracks 当播放顺序。
 func _scan_music() -> void:
 	_folders.clear()
 	_root_tracks.clear()
 	_tracks.clear()
 	_unsupported = 0
-
-	var sources: Array[Dictionary] = [
-		{"source": SOURCE_USER, "dir": USER_MUSIC_DIR},
-		{"source": SOURCE_BUILTIN, "dir": MUSIC_DIR},
-	]
-	var merged: Dictionary = {}
-	# 两处来源会有同一首歌——出厂那批第一次跑会被原样复制到玩家目录里，两边就都有了。
-	# 按**相对路径**去重：玩家那份先扫，所以留下的是他自己的（改过名的也会跟着变）。
-	var seen: Dictionary = {}
-	for entry: Dictionary in sources:
-		var found := _scan_root(str(entry["source"]), str(entry["dir"]))
-		_unsupported += int(found["unsupported"])
-		for track: Dictionary in found["root_tracks"]:
-			if seen.has(str(track["rel"])):
-				continue
-			seen[str(track["rel"])] = true
-			_root_tracks.append(track)
-		for folder: Dictionary in found["folders"]:
-			var name := str(folder["name"])
-			if not merged.has(name):
-				merged[name] = {"name": name, "tracks": []}
-			var bucket: Array = merged[name]["tracks"]
-			for track: Dictionary in folder["tracks"]:
-				if seen.has(str(track["rel"])):
-					continue
-				seen[str(track["rel"])] = true
-				bucket.append(track)
-
-	var names: Array = merged.keys()
-	names.sort()
-	for name: String in names:
-		_folders.append(merged[name])
+	var found := _scan_root(_music_root())
+	# 一条条 append 而不是整体赋值：_scan_root 返回的是未定型的 Array，
+	# 直接赋给 Array[Dictionary] 会报类型不匹配。
+	for track: Dictionary in found["root_tracks"]:
+		_root_tracks.append(track)
+	for folder: Dictionary in found["folders"]:
+		_folders.append(folder)
+	_unsupported = int(found["unsupported"])
 
 	# 播放顺序和界面上看到的顺序一致：先顶层散歌，再逐个文件夹
 	_tracks.append_array(_root_tracks)
@@ -278,7 +200,7 @@ func _scan_music() -> void:
 ## 扫一个根目录，收成 { folders, root_tracks, unsupported }；目录不存在就返回空的。
 ## folders 里每项是 { name, tracks }（**空文件夹也收**，歌单里要列出来）。
 ## unsupported 是这棵树里「看着是音频、但 Godot 解不了」的文件数（含子文件夹）。
-func _scan_root(source: String, root_dir: String) -> Dictionary:
+func _scan_root(root_dir: String) -> Dictionary:
 	var dir := DirAccess.open(root_dir)
 	if dir == null:
 		return {"folders": [], "root_tracks": [], "unsupported": 0}
@@ -304,11 +226,11 @@ func _scan_root(source: String, root_dir: String) -> Dictionary:
 
 	var root_tracks: Array[Dictionary] = []
 	for file: String in files:
-		root_tracks.append(_make_track(root_dir, file, source))
+		root_tracks.append(_make_track(root_dir, file))
 	var folder_list: Array[Dictionary] = []
 	for folder: String in folders:
 		var tracks: Array[Dictionary] = []
-		unsupported += _collect_tracks(root_dir.path_join(folder), tracks, source)
+		unsupported += _collect_tracks(root_dir.path_join(folder), tracks)
 		folder_list.append({"name": folder, "tracks": tracks})
 	return {"folders": folder_list, "root_tracks": root_tracks, "unsupported": unsupported}
 
@@ -316,7 +238,7 @@ func _scan_root(source: String, root_dir: String) -> Dictionary:
 ## 递归收一个文件夹里的音频。再深一层的子文件夹也算，都归到这个顶层文件夹名下。
 ## 同一层里文件排在子文件夹前面，都按名字排，所以每次扫出来的顺序都一样。
 ## 返回这棵子树里「Godot 解不了」的文件数，一路累加上去给歌单提示用。
-func _collect_tracks(dir_path: String, out: Array[Dictionary], source: String) -> int:
+func _collect_tracks(dir_path: String, out: Array[Dictionary]) -> int:
 	var dir := DirAccess.open(dir_path)
 	if dir == null:
 		return 0
@@ -341,9 +263,9 @@ func _collect_tracks(dir_path: String, out: Array[Dictionary], source: String) -
 	files.sort()
 
 	for file: String in files:
-		out.append(_make_track(dir_path, file, source))
+		out.append(_make_track(dir_path, file))
 	for folder: String in folders:
-		unsupported += _collect_tracks(dir_path.path_join(folder), out, source)
+		unsupported += _collect_tracks(dir_path.path_join(folder), out)
 	return unsupported
 
 
@@ -366,20 +288,13 @@ func _audio_name(entry: String) -> String:
 	return ""
 
 
-## 拼一条歌单记录。where 是鼠标悬停在歌单某行上时显示的说明：来源 + 相对路径。
-## source 决定它算「我的音乐」还是「出厂音乐」；rel 是相对各自根目录的路径，
-## 合并两处来源时拿它去重——出厂那批第一次跑会被复制到玩家目录里，两边都有同一首。
-func _make_track(dir_path: String, file: String, source: String) -> Dictionary:
+## 拼一条歌单记录。where 是鼠标悬停在歌单某行上时显示的路径（相对音乐根目录）。
+func _make_track(dir_path: String, file: String) -> Dictionary:
 	var full := dir_path.path_join(file)
-	var own_root := USER_MUSIC_DIR if source == SOURCE_USER else MUSIC_DIR
-	var label := "我的音乐" if source == SOURCE_USER else "出厂音乐"
-	var relative := full.trim_prefix(own_root + "/")
 	return {
 		"path": full,
 		"title": file.get_basename(),
-		"rel": relative,
-		"where": "%s · %s" % [label, relative],
-		"source": source,
+		"where": full.trim_prefix(_music_root() + "/"),
 	}
 
 
@@ -440,15 +355,13 @@ func _dim(color: Color, alpha: float) -> Color:
 	return Color(color.r, color.g, color.b, color.a * alpha)
 
 
-## 往树上挂一首歌：文字是曲名，悬停显示它的来源和路径。
-## **出厂的压得更淡**，玩家自己放的和文件夹名一样亮——一眼看得出哪些是后加的。
+## 往树上挂一首歌：文字是曲名，悬停显示它相对音乐根目录的路径。
+## 歌比文件夹压淡一档，这样一眼能看出哪几行是「装东西的」、哪几行是歌。
 func _add_track_item(parent: TreeItem, track: Dictionary) -> void:
 	var item := list.create_item(parent)
 	item.set_text(0, str(track["title"]))
 	item.set_tooltip_text(0, str(track["where"]))
-	var user_made := str(track.get("source", SOURCE_BUILTIN)) == SOURCE_USER
-	item.set_custom_color(0, _dim(list.get_theme_color("font_color"),
-		0.82 if user_made else 0.55))
+	item.set_custom_color(0, _dim(list.get_theme_color("font_color"), 0.82))
 	item.set_metadata(0, {"track": str(track["path"])})
 	_item_by_path[str(track["path"])] = item
 
@@ -513,9 +426,9 @@ func play_index(index: int) -> void:
 
 
 ## 载入一首歌。两条路，这是「实时读取」的关键：
-##   1. 先 load() 走 Godot 导入好的资源 —— 这是正规路径，导出成 exe 之后也有效
-##   2. 失败了再直接读磁盘上的文件 —— 刚拖进文件夹、Godot 还没来得及导入的歌
-##      也能立刻放出来
+##   1. 先 load() 走 Godot 导入好的资源 —— 从编辑器跑时，工程 music/ 里的音频走这条
+##   2. 失败了再直接读磁盘上的文件 —— 打包之后 exe 旁边那批歌全走这条，
+##      玩家随手丢进 music/ 的新歌也能立刻放出来
 func _load_stream(path: String) -> AudioStream:
 	if ResourceLoader.exists(path):
 		var stream: Resource = load(path)
