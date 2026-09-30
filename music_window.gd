@@ -42,6 +42,9 @@ const EMPTY_HINT: String = "没有找到歌曲：点下面的「打开文件夹�
 ## 窗口开着的时候，隔多久看一眼音乐目录有没有变化（秒）。
 ## 太密是白扫，太疏玩家会觉得"放了歌半天不出现"——两秒是个不打扰的间隔。
 const RESCAN_INTERVAL: float = 2.0
+## 出厂音乐搬进玩家目录之后留的记号，用来记住"搬过了"。
+## 名字以点开头，扫歌单时会直接跳过。
+const SEED_FLAG: String = ".seeded"
 
 @onready var now_playing: Label = $Column/NowPlaying
 @onready var progress: HSlider = $Column/Bar/Progress
@@ -106,6 +109,7 @@ func _ready() -> void:
 	sfx_bar.value_changed.connect(_on_sfx_volume_changed)
 	sfx_bar.value = _sfx_volume
 	_ensure_user_dir()
+	_seed_user_music()
 	reload_playlist()
 
 
@@ -131,6 +135,52 @@ func _ensure_user_dir() -> void:
 			DirAccess.make_dir_recursive_absolute(root.path_join(entry))
 		entry = builtin.get_next()
 	builtin.list_dir_end()
+
+
+## 头一次跑的时候，把出厂的曲子**原样复制一份**到玩家的音乐目录里——这样他打开
+## 文件夹能看到货真价实的 mp3，想删想改名都随他。歌单那边两处本来就是合并的，
+## 复制过去仍是同一行，不会变成两份。
+##
+## 只做一次（凭 .seeded 那个记号）：玩家删掉的、改过名的都算数，不该每次启动又塞回来。
+## 已经存在的文件一律不覆盖——那是玩家自己的。
+func _seed_user_music() -> void:
+	if FileAccess.file_exists(USER_MUSIC_DIR.path_join(SEED_FLAG)):
+		return
+	var found := _scan_root(SOURCE_BUILTIN, MUSIC_DIR)
+	var copied := 0
+	for track: Dictionary in found["root_tracks"]:
+		copied += _copy_out(str(track["path"]))
+	for folder: Dictionary in found["folders"]:
+		for track: Dictionary in folder["tracks"]:
+			copied += _copy_out(str(track["path"]))
+	var mark := FileAccess.open(USER_MUSIC_DIR.path_join(SEED_FLAG), FileAccess.WRITE)
+	if mark != null:
+		mark.store_line("出厂音乐复制过 %d 首；删掉这个文件就会再复制一次" % copied)
+		mark.close()
+
+
+## 把一首出厂曲子写成普通文件放进玩家的音乐目录，保持它在出厂那边的相对路径。
+## 返回 1 表示真写了，0 表示跳过（格式不合适、或者玩家那儿已经有同名的了）。
+##
+## **字节从 AudioStreamMP3.data 拿**，不是把音频重新编码一遍：打包之后 res:// 里那个
+## mp3 已经被导成 .mp3str，直接 FileAccess 读原文件根本读不到；而 .data 里装的就是
+## 原始 mp3 数据（实测长度和磁盘上的源文件一字节不差、开头是 "ID3"），所以复制出来的
+## 是能直接播放、别的播放器也认的普通 mp3。
+func _copy_out(res_path: String) -> int:
+	var stream := load(res_path)
+	if not (stream is AudioStreamMP3):
+		return 0
+	var relative := res_path.trim_prefix(MUSIC_DIR + "/")
+	var absolute := ProjectSettings.globalize_path(USER_MUSIC_DIR.path_join(relative))
+	if FileAccess.file_exists(absolute):
+		return 0
+	DirAccess.make_dir_recursive_absolute(absolute.get_base_dir())
+	var file := FileAccess.open(absolute, FileAccess.WRITE)
+	if file == null:
+		return 0
+	file.store_buffer((stream as AudioStreamMP3).data)
+	file.close()
+	return 1
 
 
 ## 点「打开文件夹」：用系统自带的文件管理器打开玩家的音乐目录。
@@ -192,15 +242,27 @@ func _scan_music() -> void:
 		{"source": SOURCE_BUILTIN, "dir": MUSIC_DIR},
 	]
 	var merged: Dictionary = {}
+	# 两处来源会有同一首歌——出厂那批第一次跑会被原样复制到玩家目录里，两边就都有了。
+	# 按**相对路径**去重：玩家那份先扫，所以留下的是他自己的（改过名的也会跟着变）。
+	var seen: Dictionary = {}
 	for entry: Dictionary in sources:
 		var found := _scan_root(str(entry["source"]), str(entry["dir"]))
-		_root_tracks.append_array(found["root_tracks"])
 		_unsupported += int(found["unsupported"])
+		for track: Dictionary in found["root_tracks"]:
+			if seen.has(str(track["rel"])):
+				continue
+			seen[str(track["rel"])] = true
+			_root_tracks.append(track)
 		for folder: Dictionary in found["folders"]:
 			var name := str(folder["name"])
 			if not merged.has(name):
 				merged[name] = {"name": name, "tracks": []}
-			(merged[name]["tracks"] as Array).append_array(folder["tracks"])
+			var bucket: Array = merged[name]["tracks"]
+			for track: Dictionary in folder["tracks"]:
+				if seen.has(str(track["rel"])):
+					continue
+				seen[str(track["rel"])] = true
+				bucket.append(track)
 
 	var names: Array = merged.keys()
 	names.sort()
@@ -305,15 +367,18 @@ func _audio_name(entry: String) -> String:
 
 
 ## 拼一条歌单记录。where 是鼠标悬停在歌单某行上时显示的说明：来源 + 相对路径。
-## source 决定它算「我的音乐」还是「出厂音乐」。
+## source 决定它算「我的音乐」还是「出厂音乐」；rel 是相对各自根目录的路径，
+## 合并两处来源时拿它去重——出厂那批第一次跑会被复制到玩家目录里，两边都有同一首。
 func _make_track(dir_path: String, file: String, source: String) -> Dictionary:
 	var full := dir_path.path_join(file)
 	var own_root := USER_MUSIC_DIR if source == SOURCE_USER else MUSIC_DIR
 	var label := "我的音乐" if source == SOURCE_USER else "出厂音乐"
+	var relative := full.trim_prefix(own_root + "/")
 	return {
 		"path": full,
 		"title": file.get_basename(),
-		"where": "%s · %s" % [label, full.trim_prefix(own_root + "/")],
+		"rel": relative,
+		"where": "%s · %s" % [label, relative],
 		"source": source,
 	}
 
