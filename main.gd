@@ -242,8 +242,13 @@ func _is_unlocked(key: String) -> bool:
 
 ## 按累计胜场推进解锁进度，然后把没解锁的窗口收起来、按钮置灰。
 ## 解锁进度只增不减，所以清空比分不会把已经开出来的窗口又锁上。
+##
+## 这一把**刚开出来的**窗口会立刻弹到玩家面前：赢了之后只多出一个按钮
+## 容易被忽略，跳出来才像"奖励到手"。**只弹这一次开出来的那些**——
+## 已经开过的窗口不碰，玩家自己关掉的，不该赢一局又被掀开一次。
 func _refresh_unlocks() -> void:
 	var earned := mini(UNLOCK_ORDER.size(), store.player_wins)
+	var before := settings.unlock_level
 	if earned > settings.unlock_level:
 		settings.unlock_level = earned
 		settings.save()
@@ -251,6 +256,11 @@ func _refresh_unlocks() -> void:
 		if not _is_unlocked(key):
 			_small_window(key).hide()
 	_refresh_window_buttons()
+	if settings.unlock_level > before:
+		for i: int in range(before, settings.unlock_level):
+			_small_window(UNLOCK_ORDER[i]).show()
+		# 窗口刚变成显示，按钮要重算一次"已开着"的状态
+		_refresh_window_buttons()
 
 
 ## 四个窗口入口按钮：**没解锁的直接不显示**——不给一个灰按钮占着位置，
