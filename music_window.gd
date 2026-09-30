@@ -29,10 +29,19 @@ const USER_MUSIC_DIR: String = "user://music"
 ## 两处来源的标记。歌单里是合并显示的，靠这个决定文字深浅和悬停说明。
 const SOURCE_USER: String = "user"
 const SOURCE_BUILTIN: String = "builtin"
-## 运行时能加载的音频格式（Godot 4 只认这三种）。
+## 运行时能加载的音频格式。**Godot 4 只有这三种**——它没有 flac / opus / aac 的解码器，
+## 这不是本项目的取舍，是引擎的硬限制：AudioStreamFLAC 之类的类在 ClassDB 里根本不存在。
 const EXTENSIONS: Array[String] = ["mp3", "ogg", "wav"]
+## 认得出来是音频、但上面三种之外的扩展名。歌单里拿它提醒玩家自己转一下格式，
+## 免得往文件夹里放了一堆歌，却只听到安静。
+const OTHER_AUDIO: Array[String] = [
+	"flac", "m4a", "aac", "opus", "wma", "aiff", "aif", "ape", "wv", "mka",
+]
 ## 一首歌都没扫到时的提示。
 const EMPTY_HINT: String = "没有找到歌曲：点下面的「打开文件夹」把音频放进去"
+## 窗口开着的时候，隔多久看一眼音乐目录有没有变化（秒）。
+## 太密是白扫，太疏玩家会觉得"放了歌半天不出现"——两秒是个不打扰的间隔。
+const RESCAN_INTERVAL: float = 2.0
 
 @onready var now_playing: Label = $Column/NowPlaying
 @onready var progress: HSlider = $Column/Bar/Progress
@@ -58,6 +67,11 @@ var _tracks: Array[Dictionary] = []
 var _folders: Array[Dictionary] = []
 ## 直接放在任一根目录下、没进子文件夹的歌。玩家的排在前面。
 var _root_tracks: Array[Dictionary] = []
+## 这次扫描里遇到几个「认得出是音频、但 Godot 解不了」的文件。歌单里拿它提醒玩家——
+## 往文件夹里放了歌却听不到，多半就是这个原因。
+var _unsupported: int = 0
+## 距上次检查音乐目录变化过了多久（秒）。窗口开着的时候靠它把新丢进来的歌刷出来。
+var _rescan_timer: float = 0.0
 ## 哪些文件夹被用户展开过。重扫之后照这个恢复，不然每次开窗口都缩回去。
 var _expanded: Dictionary = {}
 ## 路径 -> TreeItem，播放时用来把正在放的那首选中。
@@ -95,10 +109,28 @@ func _ready() -> void:
 	reload_playlist()
 
 
-## 把玩家的音乐目录建出来（已经有了就什么都不做）。
-## 一进来就建，玩家点「打开文件夹」时那个目录一定在，不会扑空。
+## 把玩家的音乐目录建出来，**空着的话再照着出厂那边的分类铺一遍空文件夹**——
+## 那个目录藏在 AppData 深处，玩家点「打开文件夹」过去总得看到点东西，
+## 空荡荡一片会不知道该往哪儿放。
+##
+## 判据是**目录空不空**而不是"第一次建"：玩家自己往里放过了就不动他；
+## 但空目录（头一次跑、或者被清空过）就该给他个起点。
 func _ensure_user_dir() -> void:
-	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(USER_MUSIC_DIR))
+	var root := ProjectSettings.globalize_path(USER_MUSIC_DIR)
+	DirAccess.make_dir_recursive_absolute(root)
+	var here := DirAccess.open(USER_MUSIC_DIR)
+	if here == null or not here.get_files().is_empty() or not here.get_directories().is_empty():
+		return
+	var builtin := DirAccess.open(MUSIC_DIR)
+	if builtin == null:
+		return
+	builtin.list_dir_begin()
+	var entry := builtin.get_next()
+	while entry != "":
+		if not entry.begins_with(".") and builtin.current_is_dir():
+			DirAccess.make_dir_recursive_absolute(root.path_join(entry))
+		entry = builtin.get_next()
+	builtin.list_dir_end()
 
 
 ## 点「打开文件夹」：用系统自带的文件管理器打开玩家的音乐目录。
@@ -153,6 +185,7 @@ func _scan_music() -> void:
 	_folders.clear()
 	_root_tracks.clear()
 	_tracks.clear()
+	_unsupported = 0
 
 	var sources: Array[Dictionary] = [
 		{"source": SOURCE_USER, "dir": USER_MUSIC_DIR},
@@ -162,6 +195,7 @@ func _scan_music() -> void:
 	for entry: Dictionary in sources:
 		var found := _scan_root(str(entry["source"]), str(entry["dir"]))
 		_root_tracks.append_array(found["root_tracks"])
+		_unsupported += int(found["unsupported"])
 		for folder: Dictionary in found["folders"]:
 			var name := str(folder["name"])
 			if not merged.has(name):
@@ -179,14 +213,16 @@ func _scan_music() -> void:
 		_tracks.append_array(folder["tracks"])
 
 
-## 扫一个根目录，收成 { folders, root_tracks }；目录不存在就返回两样都空。
+## 扫一个根目录，收成 { folders, root_tracks, unsupported }；目录不存在就返回空的。
 ## folders 里每项是 { name, tracks }（**空文件夹也收**，歌单里要列出来）。
+## unsupported 是这棵树里「看着是音频、但 Godot 解不了」的文件数（含子文件夹）。
 func _scan_root(source: String, root_dir: String) -> Dictionary:
 	var dir := DirAccess.open(root_dir)
 	if dir == null:
-		return {"folders": [], "root_tracks": []}
+		return {"folders": [], "root_tracks": [], "unsupported": 0}
 	var folders: Array[String] = []
 	var files: Array[String] = []
+	var unsupported := 0
 	dir.list_dir_begin()
 	var entry := dir.get_next()
 	while entry != "":
@@ -197,6 +233,8 @@ func _scan_root(source: String, root_dir: String) -> Dictionary:
 				var name := _audio_name(entry)
 				if not name.is_empty() and not files.has(name):
 					files.append(name)
+				elif _is_other_audio(entry):
+					unsupported += 1
 		entry = dir.get_next()
 	dir.list_dir_end()
 	folders.sort()
@@ -208,19 +246,21 @@ func _scan_root(source: String, root_dir: String) -> Dictionary:
 	var folder_list: Array[Dictionary] = []
 	for folder: String in folders:
 		var tracks: Array[Dictionary] = []
-		_collect_tracks(root_dir.path_join(folder), tracks, source)
+		unsupported += _collect_tracks(root_dir.path_join(folder), tracks, source)
 		folder_list.append({"name": folder, "tracks": tracks})
-	return {"folders": folder_list, "root_tracks": root_tracks}
+	return {"folders": folder_list, "root_tracks": root_tracks, "unsupported": unsupported}
 
 
 ## 递归收一个文件夹里的音频。再深一层的子文件夹也算，都归到这个顶层文件夹名下。
 ## 同一层里文件排在子文件夹前面，都按名字排，所以每次扫出来的顺序都一样。
-func _collect_tracks(dir_path: String, out: Array[Dictionary], source: String) -> void:
+## 返回这棵子树里「Godot 解不了」的文件数，一路累加上去给歌单提示用。
+func _collect_tracks(dir_path: String, out: Array[Dictionary], source: String) -> int:
 	var dir := DirAccess.open(dir_path)
 	if dir == null:
-		return
+		return 0
 	var folders: Array[String] = []
 	var files: Array[String] = []
+	var unsupported := 0
 	dir.list_dir_begin()
 	var entry := dir.get_next()
 	while entry != "":
@@ -231,6 +271,8 @@ func _collect_tracks(dir_path: String, out: Array[Dictionary], source: String) -
 				var name := _audio_name(entry)
 				if not name.is_empty() and not files.has(name):
 					files.append(name)
+				elif _is_other_audio(entry):
+					unsupported += 1
 		entry = dir.get_next()
 	dir.list_dir_end()
 	folders.sort()
@@ -239,7 +281,14 @@ func _collect_tracks(dir_path: String, out: Array[Dictionary], source: String) -
 	for file: String in files:
 		out.append(_make_track(dir_path, file, source))
 	for folder: String in folders:
-		_collect_tracks(dir_path.path_join(folder), out, source)
+		unsupported += _collect_tracks(dir_path.path_join(folder), out, source)
+	return unsupported
+
+
+## 是不是「认得出是音频、但 Godot 运行时解不了」的那种。运行时只认 wav / mp3 / ogg，
+## 别的（flac、m4a、opus…）只能跳过，然后在歌单里提醒玩家自己转一下格式。
+func _is_other_audio(entry: String) -> bool:
+	return OTHER_AUDIO.has(entry.get_extension().to_lower())
 
 
 ## 把 DirAccess 报出来的名字换成资源名；不是音频就返回空串。
@@ -308,6 +357,15 @@ func _rebuild_tree() -> void:
 			for track: Dictionary in tracks:
 				_add_track_item(item, track)
 		item.set_collapsed(not bool(_expanded.get(name, false)))
+
+	# 放了 Godot 解不了的格式（flac / m4a / opus…）就在最后提一句。
+	# 不说的话，玩家会以为是游戏坏了——歌就在文件夹里躺着，歌单里却一首都没有。
+	if _unsupported > 0:
+		var warn := list.create_item(root)
+		warn.set_text(0, "还有 %d 个文件放不了（格式不支持）" % _unsupported)
+		warn.set_selectable(0, false)
+		warn.set_custom_color(0, _dim(list.get_theme_color("font_color"), 0.45))
+		warn.set_tooltip_text(0, "Godot 只能放 mp3 / ogg / wav；其余的转一下格式就能用了")
 
 	_rebuilding = false
 
@@ -459,7 +517,8 @@ func _is_playing() -> bool:
 
 ## 每帧把播放位置刷到播放条上。用 set_value_no_signal，
 ## 否则这行赋值会触发 value_changed，被当成用户在拖条。
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_tick_rescan(delta)
 	if player == null:
 		return
 	var length := 0.0
@@ -471,6 +530,40 @@ func _process(_delta: float) -> void:
 		progress.set_value_no_signal(clampf(position, 0.0, progress.max_value))
 	clock.text = "%s / %s" % [_format_time(progress.value), _format_time(length)]
 	_refresh_button()
+
+
+## 窗口开着的时候隔一会儿看一眼音乐目录变了没有——玩家往文件夹里丢歌，
+## 列表里应该自己冒出来，而不是逼他关掉窗口再开。
+##
+## 只在这个窗口可见时轮询：关着的时候没人看，白扫。
+## 扫描本身很轻（就两层目录），但**重建歌单树要等真的变了才做**，
+## 否则每隔两秒重建一次，玩家正在翻列表会被打断。
+func _tick_rescan(delta: float) -> void:
+	if not visible:
+		return
+	_rescan_timer += delta
+	if _rescan_timer < RESCAN_INTERVAL:
+		return
+	_rescan_timer = 0.0
+	var before := _path_signature()
+	_scan_music()
+	if _path_signature() == before:
+		return
+	_index = _find_index(_current_path)
+	_rebuild_tree()
+	_reveal_current()
+	_refresh_now_playing()
+
+
+## 把当前扫到的歌拼成一个字符串，用来比"目录内容变了没有"。
+## **把"放不了的文件数"也算进去**：那些文件进不了 _tracks，但它们的出现和消失
+## 会让歌单多一行／少一行提示，不带上就永远刷不出来。
+func _path_signature() -> String:
+	var parts := PackedStringArray()
+	for track: Dictionary in _tracks:
+		parts.append(str(track["path"]))
+	parts.append("unsupported=%d" % _unsupported)
+	return "|".join(parts)
 
 
 func _refresh_now_playing() -> void:
