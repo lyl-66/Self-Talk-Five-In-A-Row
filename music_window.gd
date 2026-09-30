@@ -2,9 +2,14 @@ extends Window
 
 ## 音乐播放器窗口：曲名、播放条、暂停/播放、下一首、歌单。
 ##
-## 歌曲是游戏的一部分，放在工程的 res://music/ 里，玩家只能从歌单里挑，
-## 不能自己选文件。歌单**每次窗口打开时重新扫一遍**，所以往 res://music/
-## 下的任意子文件夹里丢一首歌，下次开窗口它就在列表里——不用改代码，也不用重启。
+## 歌单有**两个来源**，扫出来分两组列着：
+##   · 「我的音乐」—— user://music/，玩家自己的。**打包成 exe 之后这里依然能写**，
+##     所以这才是玩家放歌的地方；窗口上那个「打开文件夹」按钮直接跳过去。
+##   · 「出厂音乐」—— 工程的 res://music/，跟着游戏一起打包的那批。
+## 歌单**每次窗口打开时重新扫一遍**，所以往任一来源的子文件夹里丢一首歌，
+## 下次开窗口它就在列表里——不用改代码，也不用重启。
+##
+## 两组**不合并**：同名文件夹也各归各的，一眼能分清哪些是自己放的。
 ##
 ## 歌单按文件夹分组：每个子文件夹一行（后面写着有几首），点一下展开或收起，
 ## 展开后才看得到里面的歌。空文件夹也列出来，展开写着「还没有歌」。
@@ -15,12 +20,18 @@ extends Window
 ## 被单独关掉时发出；主窗口据此把「音乐」按钮恢复成可点。
 signal closed
 
-## 歌单根目录。子文件夹会被递归扫描。
+## 出厂音乐的根目录，跟着游戏一起打包。子文件夹会被递归扫描。
 const MUSIC_DIR: String = "res://music"
+## 玩家自己的音乐目录，落在存档目录下。**导出成 exe 以后这里照样能写**，
+## 而 res:// 在包里是只读的——所以玩家要加歌只能加在这儿。
+const USER_MUSIC_DIR: String = "user://music"
+## 歌单里两组的标题。
+const USER_GROUP: String = "我的音乐"
+const BUILTIN_GROUP: String = "出厂音乐"
 ## 运行时能加载的音频格式（Godot 4 只认这三种）。
 const EXTENSIONS: Array[String] = ["mp3", "ogg", "wav"]
 ## 一首歌都没扫到时的提示。
-const EMPTY_HINT: String = "没有找到歌曲：把音频放到工程的 music/ 文件夹里"
+const EMPTY_HINT: String = "没有找到歌曲：点下面的「打开文件夹」把音频放进去"
 
 @onready var now_playing: Label = $Column/NowPlaying
 @onready var progress: HSlider = $Column/Bar/Progress
@@ -29,6 +40,7 @@ const EMPTY_HINT: String = "没有找到歌曲：把音频放到工程的 music/
 @onready var sfx_bar: HSlider = $Column/Sfx/SfxBar
 @onready var play_pause_button: Button = $Column/Buttons/PlayPause
 @onready var next_button: Button = $Column/Buttons/Next
+@onready var open_folder_button: Button = $Column/Buttons/OpenFolder
 @onready var list: Tree = $Column/List
 
 ## 播放器，由主窗口注入。
@@ -37,14 +49,15 @@ var player: AudioStreamPlayer = null
 ## 是个数组：落子声备了两个轮流用，音效条要一起调，不然只有一半的声音受控。
 var sfx_players: Array[AudioStreamPlayer] = []
 
-## 播放顺序摊平之后的一份：顶层散落的歌在前，然后按文件夹顺序接上各自的歌。
+## 播放顺序摊平之后的一份：我的音乐在前、出厂音乐在后，组里再按文件夹顺序接。
 ## 每项 { path, title, where }。_index 是它里面的下标，「下一首」也跟着它走。
 var _tracks: Array[Dictionary] = []
-## 歌单树的结构：每项 { name, tracks }。空文件夹也在里面（tracks 为空）。
-var _folders: Array[Dictionary] = []
-## 直接放在 music/ 下、没进子文件夹的歌。
-var _root_tracks: Array[Dictionary] = []
-## 哪些文件夹被用户展开过。重扫之后照这个恢复，不然每次开窗口都缩回去。
+## 歌单树的顶层结构，每项一组：{ name, folders, root_tracks }。
+## folders 里每项是 { name, key, tracks }（空文件夹也在，tracks 为空）；
+## 目录不存在的那一组压根不会进来——比如玩家还没建过 user://music 的时候。
+var _groups: Array[Dictionary] = []
+## 哪些组 / 文件夹被用户展开过（键是组名，或者「组名/文件夹名」）。
+## 重扫之后照这个恢复，不然每次开窗口都缩回去。
 var _expanded: Dictionary = {}
 ## 路径 -> TreeItem，播放时用来把正在放的那首选中。
 var _item_by_path: Dictionary = {}
@@ -68,6 +81,7 @@ func _ready() -> void:
 	close_requested.connect(_on_close_requested)
 	play_pause_button.pressed.connect(toggle_pause)
 	next_button.pressed.connect(play_next)
+	open_folder_button.pressed.connect(_on_open_folder_pressed)
 	list.item_selected.connect(_on_item_selected)
 	progress.value_changed.connect(_on_progress_changed)
 	progress.drag_started.connect(_on_progress_drag_started)
@@ -76,7 +90,24 @@ func _ready() -> void:
 	volume_bar.value = _volume
 	sfx_bar.value_changed.connect(_on_sfx_volume_changed)
 	sfx_bar.value = _sfx_volume
+	_ensure_user_dir()
 	reload_playlist()
+
+
+## 把玩家的音乐目录建出来（已经有了就什么都不做）。
+## 一进来就建，玩家点「打开文件夹」时那个目录一定在，不会扑空。
+func _ensure_user_dir() -> void:
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(USER_MUSIC_DIR))
+
+
+## 点「打开文件夹」：用系统自带的文件管理器打开玩家的音乐目录。
+## 路径藏在 AppData 深处，指望玩家自己找到是不现实的，所以给个按钮。
+func _on_open_folder_pressed() -> void:
+	_ensure_user_dir()
+	var err := OS.shell_open(ProjectSettings.globalize_path(USER_MUSIC_DIR))
+	if err != OK:
+		_error = "打不开文件夹：%s" % USER_MUSIC_DIR
+		_refresh_now_playing()
 
 
 ## 主窗口把播放器接进来。接上才连 finished，才能自动下一首。
@@ -114,15 +145,38 @@ func reload_playlist() -> void:
 	_refresh_button()
 
 
-## 扫 res://music：顶层散落的歌收进 _root_tracks；每个子文件夹收成 _folders 里的一条
-## （**空文件夹也收**，歌单里要列出来）。最后摊平成 _tracks 当播放顺序。
+## 扫两个来源，各收成一组：
+##   · 玩家的 user://music/ 排在前面——刚放进去的歌开窗口就能看到；
+##   · 出厂的 res://music/ 跟在后面。
+## 目录不存在的那一组直接跳过（玩家的那份 _ensure_user_dir 会建出来）。
 func _scan_music() -> void:
-	_folders.clear()
-	_root_tracks.clear()
+	_groups.clear()
 	_tracks.clear()
-	var dir := DirAccess.open(MUSIC_DIR)
+	var sources: Array[Dictionary] = [
+		{"name": USER_GROUP, "dir": USER_MUSIC_DIR},
+		{"name": BUILTIN_GROUP, "dir": MUSIC_DIR},
+	]
+	for source: Dictionary in sources:
+		var group: Dictionary = _scan_root(str(source["name"]), str(source["dir"]))
+		if group.is_empty():
+			continue
+		_groups.append(group)
+		# 播放顺序和界面上看到的顺序一致：先顶层散歌，再逐个文件夹
+		_tracks.append_array(group["root_tracks"])
+		for folder: Dictionary in group["folders"]:
+			_tracks.append_array(folder["tracks"])
+
+
+## 扫一个根目录，收成一组 { name, folders, root_tracks }；目录不存在就返回空字典。
+## 组里：顶层散落的歌进 root_tracks，每个子文件夹成 folders 里的一条
+## （**空文件夹也收**，歌单里要列出来）。
+##
+## 文件夹的 key 是「组名/文件夹名」而不是光名字：两组里可能有同名的文件夹
+## （比如两边都有个「测试」），只按名字记展开状态会串在一起。
+func _scan_root(group_name: String, root_dir: String) -> Dictionary:
+	var dir := DirAccess.open(root_dir)
 	if dir == null:
-		return
+		return {}
 	var folders: Array[String] = []
 	var files: Array[String] = []
 	dir.list_dir_begin()
@@ -140,17 +194,19 @@ func _scan_music() -> void:
 	folders.sort()
 	files.sort()
 
+	var root_tracks: Array[Dictionary] = []
 	for file: String in files:
-		_root_tracks.append(_make_track(MUSIC_DIR, file))
+		root_tracks.append(_make_track(root_dir, file))
+	var folder_list: Array[Dictionary] = []
 	for folder: String in folders:
 		var tracks: Array[Dictionary] = []
-		_collect_tracks(MUSIC_DIR.path_join(folder), tracks)
-		_folders.append({"name": folder, "tracks": tracks})
-
-	# 播放顺序和界面上看到的顺序一致：先顶层散歌，再逐个文件夹
-	_tracks.append_array(_root_tracks)
-	for folder: Dictionary in _folders:
-		_tracks.append_array(folder["tracks"])
+		_collect_tracks(root_dir.path_join(folder), tracks)
+		folder_list.append({
+			"name": folder,
+			"key": "%s/%s" % [group_name, folder],
+			"tracks": tracks,
+		})
+	return {"name": group_name, "folders": folder_list, "root_tracks": root_tracks}
 
 
 ## 递归收一个文件夹里的音频。再深一层的子文件夹也算，都归到这个顶层文件夹名下。
@@ -195,9 +251,16 @@ func _audio_name(entry: String) -> String:
 	return ""
 
 
-## 拼一条歌单记录。where 是相对 music/ 的路径，鼠标悬停在歌单某行上时显示。
+## 拼一条歌单记录。where 是鼠标悬停在歌单某行上时显示的路径：
+## 出厂那批显示成相对 music/ 的样子，玩家自己那批相对 user://music/。
+## 两个前缀各剥各的，分不出是哪个就原样留着。
 func _make_track(dir_path: String, file: String) -> Dictionary:
 	var full := dir_path.path_join(file)
+	var where := full
+	for prefix: String in [MUSIC_DIR + "/", USER_MUSIC_DIR + "/"]:
+		if full.begins_with(prefix):
+			where = full.trim_prefix(prefix)
+			break
 	return {
 		"path": full,
 		"title": file.get_basename(),
@@ -217,7 +280,8 @@ func _find_index(path: String) -> int:
 
 # --- 歌单树 -----------------------------------------------------------------
 
-## 把歌单重建出来。文件夹一行、里面的歌在下一层；空文件夹给一行灰字说明。
+## 把歌单重建出来：先一行一组（我的音乐 / 出厂音乐），组下面才是文件夹，再下面是歌。
+## 文件夹和组都能展开收起；空文件夹给一行灰字说明。
 ## 展开状态记在 _expanded 里，所以重扫（每次开窗口都会重扫）之后不会全缩回去。
 func _rebuild_tree() -> void:
 	_rebuilding = true
@@ -225,27 +289,58 @@ func _rebuild_tree() -> void:
 	list.clear()
 	var root := list.create_item()
 
-	for track: Dictionary in _root_tracks:
-		_add_track_item(root, track)
-
-	for folder: Dictionary in _folders:
-		var name := str(folder["name"])
-		var tracks: Array = folder["tracks"]
-		var item := list.create_item(root)
-		item.set_metadata(0, {"folder": name})
-		if tracks.is_empty():
-			item.set_text(0, "%s（空）" % name)
-			var hint := list.create_item(item)
-			hint.set_text(0, "这个文件夹里还没有歌")
+	for group: Dictionary in _groups:
+		var group_name := str(group["name"])
+		var count := _group_track_count(group)
+		var group_item := list.create_item(root)
+		group_item.set_metadata(0, {"group": group_name})
+		if count == 0:
+			# 玩家还没往自己那个文件夹里放过歌：留一行指路的，别只写个「0」
+			group_item.set_text(0, "%s（空）" % group_name)
+			var hint := list.create_item(group_item)
+			hint.set_text(0, "点上面的「打开文件夹」把音频放进去")
 			hint.set_selectable(0, false)
 			hint.set_custom_color(0, _dim(list.get_theme_color("font_color"), 0.45))
-		else:
-			item.set_text(0, "%s（%d）" % [name, tracks.size()])
-			for track: Dictionary in tracks:
-				_add_track_item(item, track)
-		item.set_collapsed(not bool(_expanded.get(name, false)))
+			group_item.set_collapsed(false)
+			continue
+		group_item.set_text(0, "%s（%d）" % [group_name, count])
+		for track: Dictionary in group["root_tracks"]:
+			_add_track_item(group_item, track)
+		for folder: Dictionary in group["folders"]:
+			_add_folder_item(group_item, folder)
+		# 组默认展开：下面那层文件夹默认是收起的，所以不会一下子铺满整屏
+		group_item.set_collapsed(not bool(_expanded.get(group_name, true)))
 
 	_rebuilding = false
+
+
+## 一组里一共多少首歌（含所有子文件夹），写在组名后面那个括号里。
+func _group_track_count(group: Dictionary) -> int:
+	var total: int = (group["root_tracks"] as Array).size()
+	for folder: Dictionary in group["folders"]:
+		total += (folder["tracks"] as Array).size()
+	return total
+
+
+## 往组下面挂一个文件夹：一行标题，底下是它的歌；空文件夹给一行灰字说明。
+## 展开状态按「组名/文件夹名」那个 key 记，两组里同名的文件夹互不影响。
+func _add_folder_item(parent: TreeItem, folder: Dictionary) -> void:
+	var folder_name := str(folder["name"])
+	var key := str(folder["key"])
+	var tracks: Array = folder["tracks"]
+	var item := list.create_item(parent)
+	item.set_metadata(0, {"folder": key})
+	if tracks.is_empty():
+		item.set_text(0, "%s（空）" % folder_name)
+		var hint := list.create_item(item)
+		hint.set_text(0, "这个文件夹里还没有歌")
+		hint.set_selectable(0, false)
+		hint.set_custom_color(0, _dim(list.get_theme_color("font_color"), 0.45))
+	else:
+		item.set_text(0, "%s（%d）" % [folder_name, tracks.size()])
+		for track: Dictionary in tracks:
+			_add_track_item(item, track)
+	item.set_collapsed(not bool(_expanded.get(key, false)))
 
 
 ## 把一个 TreeItem 的文字压暗一点，用来拉开层次（不影响对比度，只降一点点）。
@@ -265,22 +360,30 @@ func _add_track_item(parent: TreeItem, track: Dictionary) -> void:
 
 
 ## 展开并选中正在放的那首——按「下一首」跳到别的文件夹时，
-## 不展开的话根本看不到自己在听哪首。
+## 不展开的话根本看不到自己在听哪首。**组和文件夹都要一路撑开**，
+## 所以从它往上走一遍祖先，碰到哪个展开哪个。
 func _reveal_current() -> void:
 	var item: TreeItem = _item_by_path.get(_current_path)
 	if item == null:
 		return
-	var parent := item.get_parent()
-	if parent != null:
-		var meta: Variant = parent.get_metadata(0)
-		if meta is Dictionary and meta.has("folder"):
-			parent.set_collapsed(false)
-			_expanded[str(meta["folder"])] = true
+	var ancestor := item.get_parent()
+	while ancestor != null:
+		var meta: Variant = ancestor.get_metadata(0)
+		if meta is Dictionary:
+			var key := ""
+			if meta.has("folder"):
+				key = str(meta["folder"])
+			elif meta.has("group"):
+				key = str(meta["group"])
+			if not key.is_empty():
+				ancestor.set_collapsed(false)
+				_expanded[key] = true
+		ancestor = ancestor.get_parent()
 	item.select(0)
 	list.scroll_to_item(item)
 
 
-## 点了歌单里的一行：歌就播放，文件夹就展开 / 收起。
+## 点了歌单里的一行：歌就播放；组或者文件夹就展开 / 收起。
 func _on_item_selected() -> void:
 	if _rebuilding:
 		return
@@ -292,10 +395,16 @@ func _on_item_selected() -> void:
 		return
 	if meta.has("track"):
 		play_index(_find_index(str(meta["track"])))
-	elif meta.has("folder"):
-		var name := str(meta["folder"])
-		item.set_collapsed(not item.collapsed)
-		_expanded[name] = not item.collapsed
+		return
+	var key := ""
+	if meta.has("folder"):
+		key = str(meta["folder"])
+	elif meta.has("group"):
+		key = str(meta["group"])
+	if key.is_empty():
+		return
+	item.set_collapsed(not item.collapsed)
+	_expanded[key] = not item.collapsed
 
 
 # --- 播放 -------------------------------------------------------------------

@@ -96,6 +96,12 @@ size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 16
 text = "下一首"
 
+[node name="OpenFolder" type="Button" parent="Column/Buttons"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 16
+text = "打开文件夹"
+
 [node name="List" type="Tree" parent="Column"]
 layout_mode = 2
 size_flags_vertical = 3
